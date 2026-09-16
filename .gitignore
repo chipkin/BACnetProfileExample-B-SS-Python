@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+*.log
+
+# The native CAS BACnet Stack library is a BUILD ARTIFACT (built from the
+# submodule - see README.md "Build the native CAS BACnet Stack library"), not
+# source - do not commit it.
+CASBACnetStack_x64_Release.dll
+CASBACnetStack_x64_Release.pdb
+libCASBACnetStack_x64_Release.so
+CASBACnetStack_x86_Release.dll
+libCASBACnetStack_arm7_Release.so
+
+dist/
+smoke.log

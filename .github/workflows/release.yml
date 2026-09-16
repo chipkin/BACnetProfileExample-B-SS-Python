@@ -1,0 +1,159 @@
+# Build the native CAS BACnet Stack library, smoke-test the B-SS Python example, and publish
+# a GitHub Release (script + native library + metrics.json) when a vX.Y.Z tag is pushed. PRs
+# run the same build + smoke test without publishing.
+#
+# Unlike the C++/C# siblings, there is no language build step here at all: Python is
+# interpreted, so `main.py` runs directly - `pip install` of anything beyond the standard
+# library is NOT required (see README.md "Prerequisites"). The only compiled artifact is the
+# native CAS BACnet Stack shared library from the stack submodule's C++ source (MSBuild's
+# ReleaseDll|x64 configuration on Windows, g++ -shared on Linux - see README.md "Build the
+# native CAS BACnet Stack library"), copied next to main.py so ctypes.CDLL() can find it.
+#
+# The CAS BACnet Stack is a PRIVATE git submodule: the repository secret CAS_STACK_PAT must
+# hold a PAT with read access to chipkin/cas-bacnet-stack.
+name: build-and-release
+
+on:
+  pull_request:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # windows-2022 pins the VS 2022 (v143) toolset the stack's ReleaseDll config
+          # (and the released binaries) are built with.
+          - os: windows-2022
+            artifact: BACnetProfileExampleBSSPython-windows-x64
+            nativelib: CASBACnetStack_x64_Release.dll
+            metrics: metrics-windows.json
+          - os: ubuntu-latest
+            artifact: BACnetProfileExampleBSSPython-linux-x64
+            nativelib: libCASBACnetStack_x64_Release.so
+            metrics: metrics-linux.json
+    steps:
+      - name: Enable git long paths (Windows)
+        if: runner.os == 'Windows'
+        run: git config --system core.longpaths true
+
+      - name: Checkout (with the CAS BACnet Stack submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.CAS_STACK_PAT || github.token }}
+
+      - name: Stack commit (recorded in metrics.json)
+        id: stack
+        shell: bash
+        run: echo "sha=$(git -C submodules/cas-bacnet-stack rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Compile-check main.py and common/ (no pip install needed - stdlib only)
+        shell: bash
+        run: python -m py_compile main.py common/*.py cas_bacnet_stack/*.py
+
+      - name: Build the native CAS BACnet Stack library (Windows - MSBuild ReleaseDll|x64)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $msbuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+            -latest -products * -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
+          & $msbuild submodules\cas-bacnet-stack\projects\msvs\BuildCASBACnetStack.sln `
+            /p:Configuration=ReleaseDll /p:Platform=x64 /m
+          if ($LASTEXITCODE -ne 0) { throw "MSBuild failed with exit code $LASTEXITCODE" }
+          Copy-Item submodules\cas-bacnet-stack\bin\CASBACnetStack_x64_Release.dll .
+          Get-ChildItem CASBACnetStack_x64_Release.dll
+
+      - name: Build the native CAS BACnet Stack library (Linux - g++ shared)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          g++ -shared -fPIC -std=c++17 -O2 \
+              -I submodules/cas-bacnet-stack/source \
+              submodules/cas-bacnet-stack/source/*.cpp \
+              -o libCASBACnetStack_x64_Release.so
+          ls -la libCASBACnetStack_x64_Release.so
+
+      - name: Smoke test + metrics (starts, binds, stays up; measures time to 'ready')
+        shell: bash
+        run: |
+          start=$(date +%s%3N)
+          python3 main.py --port 47822 > smoke.log 2>&1 &
+          PID=$!
+          ready_ms=""
+          for i in $(seq 1 100); do
+            if grep -q "ready" smoke.log; then ready_ms=$(( $(date +%s%3N) - start )); break; fi
+            sleep 0.1
+          done
+          sleep 2
+          if kill -0 "$PID" 2>/dev/null; then kill "$PID" 2>/dev/null || true; else echo "FAIL: device exited early"; cat smoke.log; exit 1; fi
+          [ -n "$ready_ms" ] || { echo "FAIL: no 'ready' line"; cat smoke.log; exit 1; }
+          cat smoke.log
+          bytes=$(stat -c %s "${{ matrix.nativelib }}" 2>/dev/null || wc -c < "${{ matrix.nativelib }}")
+          sha=$(sha256sum "${{ matrix.nativelib }}" | cut -c1-16)
+          stackver=$(grep -oE 'CAS BACnet Stack v[0-9.]+' smoke.log | head -1 | grep -oE '[0-9.]+' || true)
+          appver=$(grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' smoke.log | head -1 || true)
+          cat > "${{ matrix.metrics }}" <<EOF
+          {
+            "example": "BACnetProfileExampleBSSPython",
+            "app_version": "$appver",
+            "os": "${{ matrix.os }}",
+            "link_mode": "ctypes-CDLL",
+            "stack_commit": "${{ steps.stack.outputs.sha }}",
+            "stack_version": "$stackver",
+            "nativelib_bytes": $bytes,
+            "nativelib_sha256_prefix": "$sha",
+            "startup_ms_to_ready": $ready_ms,
+            "python_version": "$(python3 --version 2>&1 | cut -d' ' -f2)",
+            "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "git_ref": "${{ github.ref_name }}"
+          }
+          EOF
+          cat "${{ matrix.metrics }}"
+          { echo '### metrics (${{ matrix.os }})'; echo '```json'; cat "${{ matrix.metrics }}"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp main.py dist/
+          cp -r common dist/
+          cp -r cas_bacnet_stack dist/
+          cp "${{ matrix.nativelib }}" dist/ 2>/dev/null || true
+          cp "${{ matrix.metrics }}" dist/
+          cp README.md TUTORIAL.md LICENSE dist/ 2>/dev/null || true
+          cp docs/PICS.md dist/ 2>/dev/null || true
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/*
+
+  release:
+    name: publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: artifacts/**/*

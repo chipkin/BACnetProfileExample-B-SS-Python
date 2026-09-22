@@ -98,7 +98,7 @@ from common import cas_bacnet_stack_example_constants as c
 # 1. Example + device configuration
 # -----------------------------------------------------------------------------
 APP_NAME = "BACnet B-SS (Smart Sensor) Example - Python"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 
 # The device instance. BACnet requires this to be configurable, so it defaults
 # to 389001 and can be overridden on the command line with --deviceID. Keep it
@@ -145,13 +145,19 @@ DEVICE_DESCRIPTION = (
 #   VENDOR_NAME - your company name; it must match VENDOR_IDENTIFIER above.
 #   MODEL_NAME  - your model designation. This is what a building operator
 #                 reads to identify your device in a discovery tool.
-#   FIRMWARE_REVISION / APPLICATION_SOFTWARE_VERSION - your real versions.
-#                 Wire them to your build rather than hard-coding a number
-#                 that will go stale.
+#   Application_Software_Version (12) / Firmware_Revision (44) - read by
+#   clients via the get_property_character_string callback below.
+#   Application_Software_Version is this example's OWN version: it reads
+#   APP_VERSION directly, so it can never drift from what --version prints.
+#   Firmware_Revision names the PLATFORM underneath this app, not the app
+#   itself - it is built at runtime from the CAS BACnet Stack's own
+#   BACnetStack_GetAPI{Major,Minor,Patch,Build}Version() calls (the same 4
+#   calls cas_example_helper.print_version() already uses for the startup
+#   banner) into g_firmware_revision, once, right after the stack loads
+#   successfully in main() - see "Load the CAS BACnet Stack" below.
 VENDOR_NAME = "Chipkin Automation Systems"
 MODEL_NAME = "CAS BACnet Stack Example - B-SS"
-FIRMWARE_REVISION = "1.0.0"
-APPLICATION_SOFTWARE_VERSION = "1.0.0"
+g_firmware_revision = None
 
 # The sensor objects (all instance 1) and their colour names.
 ANALOG_INPUT_INSTANCE = 1       # "Bronze"
@@ -457,10 +463,10 @@ def get_property_character_string(device_instance, object_type, object_instance,
             return _return_character_string(MODEL_NAME, value, value_element_count,
                                              max_element_count, encoding_type)
         if property_identifier == c.PROPERTY_IDENTIFIER_FIRMWARE_REVISION:
-            return _return_character_string(FIRMWARE_REVISION, value, value_element_count,
+            return _return_character_string(g_firmware_revision, value, value_element_count,
                                              max_element_count, encoding_type)
         if property_identifier == c.PROPERTY_IDENTIFIER_APPLICATION_SOFTWARE_VERSION:
-            return _return_character_string(APPLICATION_SOFTWARE_VERSION, value, value_element_count,
+            return _return_character_string(APP_VERSION, value, value_element_count,
                                              max_element_count, encoding_type)
 
     return False
@@ -563,7 +569,7 @@ def _print_help():
 # 4. main()
 # -----------------------------------------------------------------------------
 def main():
-    global g_device_instance, g_bacnet_ip_udp_port, g_analog_input_1_value
+    global g_device_instance, g_bacnet_ip_udp_port, g_analog_input_1_value, g_firmware_revision
 
     parser = ArgumentParser(prog="main.py", description=APP_NAME)
     parser.add_argument("--port", type=cas_example_helper.parse_port, default=47808,
@@ -593,6 +599,17 @@ def main():
               "see README.md \"Build the native CAS BACnet Stack library\".", file=sys.stderr)
         return 1
     bacnet.bind(library)
+
+    # Firmware_Revision (44) names the CAS BACnet Stack itself, not this
+    # example app - build it once from the stack's own version API, right
+    # after the stack is bound, so every later ReadProperty of (Device,
+    # Firmware_Revision) just returns the string computed here.
+    g_firmware_revision = "{}.{}.{}.{}".format(
+        bacnet.BACnetStack_GetAPIMajorVersion(),
+        bacnet.BACnetStack_GetAPIMinorVersion(),
+        bacnet.BACnetStack_GetAPIPatchVersion(),
+        bacnet.BACnetStack_GetAPIBuildVersion(),
+    )
 
     if args.version:
         cas_example_helper.print_version(APP_NAME, APP_VERSION)

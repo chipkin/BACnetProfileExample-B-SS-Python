@@ -45,7 +45,7 @@
 # object that every BACnet device must have. Each object is given a colour name
 # (a convention shared across this example series):
 #
-#     Device 389001          "Rainbow"    (instance configurable with --deviceID)
+#     Device 389001          "Chipkin Example B-SS"    (instance configurable with --deviceID)
 #     Analog Input  1        "Bronze"     (REAL, degrees Celsius; starts at 21.5)
 #     Binary Input  1        "Emerald"    (active / inactive)
 #     Multi-State Input 1    "Hot Pink"   (an enumerated state, 1..3)
@@ -98,7 +98,7 @@ from common import cas_bacnet_stack_example_constants as c
 # 1. Example + device configuration
 # -----------------------------------------------------------------------------
 APP_NAME = "BACnet B-SS (Smart Sensor) Example - Python"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 
 # The device instance. BACnet requires this to be configurable, so it defaults
 # to 389001 and can be overridden on the command line with --deviceID. Keep it
@@ -128,11 +128,11 @@ VENDOR_IDENTIFIER = 389
 # whole BACnet internetwork, and here it is a COMPILE-TIME (well, module-load-
 # time) constant. The device instance is runtime-configurable via --deviceID,
 # so it is easy to ship two units, configure their instances correctly, and
-# still have BOTH announce Object_Name "Rainbow" - a spec violation, and a hard
+# still have BOTH announce Object_Name "Chipkin Example B-SS" - a spec violation, and a hard
 # BTL failure. In a real product Object_Name must be per-unit configurable
 # too: derive it from a serial number, DIP switches, a config file, or add a
 # --deviceName argument.
-DEVICE_NAME = "Rainbow"
+DEVICE_NAME = "Chipkin Example B-SS"
 
 # The Device object's Description. Change it to what YOUR device actually is;
 # this string describes this tutorial.

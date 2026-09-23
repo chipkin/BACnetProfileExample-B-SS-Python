@@ -88,7 +88,7 @@ up/down nudge Analog Input 1.
 
 ## Conventions
 
-- Device is named "Rainbow"; objects use the series' colour names; vendor id
+- Device is named "Chipkin Example B-SS"; objects use the series' colour names; vendor id
   389.
 - Implement **only** the services and objects the B-SS profile requires -
   but expose **every required property** of each object.

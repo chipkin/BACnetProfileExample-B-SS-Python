@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - unreleased
+
+### Changed
+
+- **Device renamed from the series' colour placeholder "Rainbow" to "Chipkin
+  Example B-SS"** so devices from different examples in the series are
+  distinguishable from each other on the same BACnet network - every example
+  previously announced the identical Object_Name "Rainbow", which made two
+  examples on one subnet indistinguishable by name. Sub-object names are
+  unchanged. `docs/colour-table.md` (series root) updated to match.
+  APP_VERSION bumped 1.0.1 -> 1.0.2.
+
+## [1.0.1] - unreleased
+
+### Fixed
+
+- `Application_Software_Version` (12) and `Firmware_Revision` (44) were
+  hardcoded to the literal string `"1.0.0"` in `main.py` and never updated as
+  the example's real version advanced - the same class of bug found by
+  someone testing [BACnetProfileExample-B-SCHUB-CPP](https://github.com/chipkin/BACnetProfileExample-B-SCHUB-CPP)
+  against a real BACnet client (CAS BACnet Explorer), where the reported
+  version didn't match the running build. `Firmware_Revision` was never
+  meant to be this example's own version at all - it names the underlying
+  platform. Fixed: `Application_Software_Version` now reads `APP_VERSION`
+  directly (one source of truth, can't drift from `--version`'s own banner
+  again). `Firmware_Revision` is now built once at start-up, right after
+  `bacnet.bind(library)` succeeds in `main()`, from the CAS BACnet Stack's
+  own `BACnetStack_GetAPIMajorVersion()`/`GetAPIMinorVersion()`/
+  `GetAPIPatchVersion()`/`GetAPIBuildVersion()` - the same 4 calls
+  `cas_example_helper.print_version()` already uses for the startup banner -
+  and stored in `g_firmware_revision` for every later ReadProperty. Verified
+  with a real ReadProperty (via `bacpypes3`) against the running device:
+  `Application_Software_Version` read back `"1.0.1"` (matching `APP_VERSION`,
+  this release) and `Firmware_Revision` read back `"6.0.21.0"` (matching the
+  stack's own `--version` banner).
+
 ## [1.0.0] - unreleased
 
 ### Added

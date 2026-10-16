@@ -25,6 +25,8 @@ single-port example uses, and uses the stack's adapter in place.
   `ParsePortArg()` and `ParseDeviceIdArg()`, with the same messages: an
   invalid value prints a warning and the default is used. They replace the
   `argparse` validators `parse_port` and `parse_device_id`.
+- `print_missing_stack_library(file, folders)` - the series' missing-library
+  message (owner ruling 2b, the same text in every port), to stderr.
 - `setup_udp()` - binds the socket and prints `FYI: Listening for BACnet/IP on
   UDP port <n> (Network Port <i>).` or the bind error, as the C++ `SetupUDP()`.
 - `SimpleUDP.port` - the UDP port the socket is bound to; `SimpleUDP.send()`
@@ -49,7 +51,9 @@ single-port example uses, and uses the stack's adapter in place.
   `ctypes.memmove`.
 - `print_version()` prints `CAS BACnet Stack version: X.Y.Z.W` and a third
   line, `Common helper (common/) version: <COMMON_VERSION>`, as the C++
-  edition does.
+  edition does; without the stack it says `not loaded (the library was not
+  found)`. The adapter import is optional, so the module imports (and
+  `--help` / `--version` work) without the stack.
 
 ## [1.0.0] - 2026-09-16
 

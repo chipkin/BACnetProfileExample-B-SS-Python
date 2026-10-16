@@ -43,9 +43,10 @@
 # (nothing of it is copied into this repository), which means:
 #
 #   - an EXPLICIT load step, like the C++ edition's LoadBACnetFunctions():
-#     `ctypes.CDLL(<submodule>/bin/<libname>)` then `bacnet.bind(library)`,
-#     both before any BACnetStack_* call (see "Load the CAS BACnet Stack"
-#     below).
+#     `ctypes.CDLL(<run directory or submodule bin>/<libname>)` then
+#     `bind(library)`, both before any BACnetStack_* call (see "Load the CAS
+#     BACnet Stack" below). Without the library the example prints why and
+#     exits 1.
 #   - every Get*Property callback is a plain Python function wrapped in a
 #     ctypes.CFUNCTYPE, receiving ctypes POINTER out-parameters it indexes
 #     like a list (`value[0] = 21.5`).
@@ -87,13 +88,18 @@ import sys
 import time
 
 # Where this example finds its code. It is run as `python main.py`, so the
-# script's own directory goes on sys.path (for `common`), and so does the CAS
-# BACnet Stack's own Python adapter, used in place from the stack submodule
-# (for `CASBACnetStackAdapter` and the generated `CASBACnetStackAdapterBindings`).
+# script's own directory (the RUN DIRECTORY) goes first on sys.path (for
+# `common`, and for the stack's adapter files if a licensed customer placed them
+# there). A development checkout falls back to the CAS BACnet Stack's own Python
+# adapter, used in place from the stack submodule (`CASBACnetStackAdapter` and
+# the generated `CASBACnetStackAdapterBindings`). The stack itself is loaded in
+# main() - see "Load the CAS BACnet Stack" - never at import time, so that
+# --help / --version and the missing-library message work without it.
 REPOSITORY = os.path.dirname(os.path.abspath(__file__))
 CAS_BACNET_STACK = os.path.join(REPOSITORY, "submodules", "cas-bacnet-stack")
-sys.path.insert(0, REPOSITORY)
-sys.path.insert(0, os.path.join(CAS_BACNET_STACK, "adapters", "python"))
+ADAPTER_DIRECTORIES = [REPOSITORY, os.path.join(CAS_BACNET_STACK, "adapters", "python")]
+LIBRARY_DIRECTORIES = [REPOSITORY, os.path.join(CAS_BACNET_STACK, "bin")]
+sys.path[:0] = [d for d in ADAPTER_DIRECTORIES if d not in sys.path]
 
 # Show print() output immediately, even when stdout is redirected to a file or
 # pipe (a background run, a Wire Test): Python fully buffers stdout when it is
@@ -102,8 +108,6 @@ sys.path.insert(0, os.path.join(CAS_BACNET_STACK, "adapters", "python"))
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(line_buffering=True)
 
-from CASBACnetStackAdapter import libname  # noqa: E402  (the adapter, in place)
-import CASBACnetStackAdapterBindings as bacnet  # noqa: E402
 from common.simple_udp import SimpleUDP  # noqa: E402
 from common import cas_example_helper as helper  # noqa: E402
 from common import cas_bacnet_stack_example_constants as c  # noqa: E402
@@ -213,6 +217,7 @@ RELIABILITY_OPEN_LOOP = 4
 g_analog_input_1_reliability = RELIABILITY_NO_FAULT_DETECTED
 
 udp = SimpleUDP()
+bacnet = None  # the stack's ctypes bindings, once load_cas_bacnet_stack() has bound the library
 
 # -----------------------------------------------------------------------------
 # 2. The sensor Simulation (NOT part of the BACnet Surface)
@@ -576,28 +581,61 @@ def get_property_character_string(device_instance, object_type, object_instance,
 # -----------------------------------------------------------------------------
 # 4. main()
 # -----------------------------------------------------------------------------
+
+# The stack library's file name when the adapter (which names it) is not there
+# to ask - only used to fill in the missing-library message.
+FALLBACK_LIBRARY_NAME = "CASBACnetStack_x64_Release.dll" if os.name == "nt" else "libCASBACnetStack_x64_Release.so"
+
+
+def load_cas_bacnet_stack():
+    """Find, load and bind the CAS BACnet Stack. Returns None on success, or
+    (missing file, [folders searched]) when it cannot: the adapter's two files
+    or the library are in neither the run directory nor the development
+    checkout's submodule, or ctypes cannot load the library it found."""
+    global bacnet
+    try:
+        from CASBACnetStackAdapter import libname
+        import CASBACnetStackAdapterBindings
+    except ImportError:
+        # No adapter either (a release has neither): name the library first -
+        # it is the part a customer licenses and builds.
+        if not any(os.path.isfile(os.path.join(d, FALLBACK_LIBRARY_NAME)) for d in LIBRARY_DIRECTORIES):
+            return FALLBACK_LIBRARY_NAME, LIBRARY_DIRECTORIES
+        return "CASBACnetStackAdapterBindings.py", ADAPTER_DIRECTORIES
+    if libname is None:
+        return FALLBACK_LIBRARY_NAME, LIBRARY_DIRECTORIES
+    for directory in LIBRARY_DIRECTORIES:
+        library_path = os.path.join(directory, libname)
+        if os.path.isfile(library_path):
+            try:
+                CASBACnetStackAdapterBindings.bind(ctypes.CDLL(library_path))
+            except (OSError, AttributeError):
+                return libname, LIBRARY_DIRECTORIES
+            bacnet = CASBACnetStackAdapterBindings
+            return None
+    return libname, LIBRARY_DIRECTORIES
+
+
 def main(argv):
     global g_device_instance, g_bacnet_ip_udp_port, g_analog_input_1_value
     global g_firmware_revision, g_sensor_fault_file
 
     # --- Load the CAS BACnet Stack -------------------------------------------
     # Required before any other BACnetStack_* call, like the C++ edition's
-    # LoadBACnetFunctions() - and before even --version, which prints the
-    # loaded stack's version. The library is loaded from the stack submodule's
-    # bin/ folder, where building the stack puts it (README.md "Build the CAS
-    # BACnet Stack library"); this repository never carries a copy.
-    if libname is None:
-        print("Error: failed to load the CAS BACnet Stack: no stack library name for this platform.",
-              file=sys.stderr)
-        return 1
-    library_path = os.path.join(CAS_BACNET_STACK, "bin", libname)
-    try:
-        library = ctypes.CDLL(library_path)
-        bacnet.bind(library)
-    except (OSError, AttributeError) as ex:
-        print(f"Error: failed to load the CAS BACnet Stack: {library_path}: {ex}", file=sys.stderr)
-        print("Build it from the submodule first - see README.md \"Build the CAS BACnet Stack library\".",
-              file=sys.stderr)
+    # LoadBACnetFunctions(). The library is looked for in the run directory
+    # (the folder that holds main.py), then in a development checkout's
+    # submodules/cas-bacnet-stack/bin/, where building the stack puts it
+    # (README.md "Build the CAS BACnet Stack library"). A release of this
+    # example does not include it: it is a separately licensed product.
+    missing = load_cas_bacnet_stack()
+
+    # --- Command line + version --------------------------------------------
+    # --help / --version print and exit, so handle them before we bind a socket.
+    # They work without the stack (the banner then says it is not loaded).
+    if helper.handle_help_and_version_args(argv, APP_NAME, APP_VERSION):
+        return 0
+    if missing is not None:
+        helper.print_missing_stack_library(*missing)
         return 1
 
     # g_firmware_revision (Device object property 44) - see its own comment
@@ -609,10 +647,6 @@ def main(argv):
         bacnet.BACnetStack_GetAPIMajorVersion(), bacnet.BACnetStack_GetAPIMinorVersion(),
         bacnet.BACnetStack_GetAPIPatchVersion(), bacnet.BACnetStack_GetAPIBuildVersion())
 
-    # --- Command line + version --------------------------------------------
-    # --help / --version print and exit, so handle them before we bind a socket.
-    if helper.handle_help_and_version_args(argv, APP_NAME, APP_VERSION):
-        return 0
     port = helper.parse_port_arg(argv, 47808)
     g_device_instance = helper.parse_device_id_arg(argv, g_device_instance)
     helper.print_version(APP_NAME, APP_VERSION)

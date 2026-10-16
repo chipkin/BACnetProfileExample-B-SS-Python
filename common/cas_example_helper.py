@@ -23,8 +23,8 @@
 #
 # THE ADAPTER IS USED IN PLACE. This module imports the CAS BACnet Stack's own
 # generated Python adapter, CASBACnetStackAdapterBindings.py, straight from
-# submodules/cas-bacnet-stack/adapters/python/ - main.py puts that folder on
-# sys.path before importing this module. Nothing of the adapter is copied into
+# submodules/cas-bacnet-stack/adapters/python/ (or from the run directory) -
+# main.py puts those folders on sys.path before importing this module. Nothing of the adapter is copied into
 # this repository: it is part of the commercially licensed stack, and the
 # stack's generator (ci_scripts/generate-python-adapter.js) owns it.
 #
@@ -58,7 +58,13 @@ import socket
 import sys
 import time
 
-import CASBACnetStackAdapterBindings as bacnet  # from submodules/cas-bacnet-stack/adapters/python/
+try:
+    # The adapter, in place (main.py puts its folders on sys.path). Imported
+    # optionally so --help, --version and the missing-library message still
+    # work in a release, which does not include the stack.
+    import CASBACnetStackAdapterBindings as bacnet
+except ImportError:
+    bacnet = None
 
 # The version of the vendored common/ helper itself (NOT the example's
 # version). Bump it whenever anything in common/ changes, and record the
@@ -276,15 +282,35 @@ def send_i_am(device_instance, udp_port, network_port_instance):
 
 def print_version(app_name, app_version):
     print(f"{app_name} v{app_version}")
-    print("CAS BACnet Stack version: {}.{}.{}.{}".format(
-        bacnet.BACnetStack_GetAPIMajorVersion(),
-        bacnet.BACnetStack_GetAPIMinorVersion(),
-        bacnet.BACnetStack_GetAPIPatchVersion(),
-        bacnet.BACnetStack_GetAPIBuildVersion(),
-    ))
+    if bacnet is not None and bacnet.is_bound():
+        print("CAS BACnet Stack version: {}.{}.{}.{}".format(
+            bacnet.BACnetStack_GetAPIMajorVersion(),
+            bacnet.BACnetStack_GetAPIMinorVersion(),
+            bacnet.BACnetStack_GetAPIPatchVersion(),
+            bacnet.BACnetStack_GetAPIBuildVersion(),
+        ))
+    else:
+        print("CAS BACnet Stack version: not loaded (the library was not found)")
     # The vendored common/ helper has its own version (see common/CHANGELOG.md)
     # so it is easy to tell whether this example's copy is stale.
     print(f"Common helper (common/) version: {COMMON_VERSION}")
+
+
+def print_missing_stack_library(missing_file, searched_directories):
+    """The series' message (the same in every language port) for a run without
+    the CAS BACnet Stack, to stderr. The caller then exits with code 1."""
+    looked_in = ("\n" + " " * 16).join(searched_directories)
+    print(f"""ERROR: This example cannot run without the CAS BACnet Stack library.
+
+  Missing file: {missing_file}
+  Looked in:    {looked_in}
+
+The CAS BACnet Stack is a commercially licensed (paid) library from Chipkin.
+It is not included in this release, so the example cannot start without it.
+
+  - To license the CAS BACnet Stack: https://store.chipkin.com/contact-us
+  - Licensed customers: build the library from the cas-bacnet-stack submodule
+    (see README.md) and place {missing_file} next to this executable.""", file=sys.stderr)
 
 
 def print_interactive_commands():

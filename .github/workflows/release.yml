@@ -1,5 +1,6 @@
 # Build the CAS BACnet Stack library, smoke-test and Wire-Test the B-SS Python example, and
-# publish a GitHub Release (the example's source + metrics.json) when a vX.Y.Z tag is pushed.
+# publish a GitHub Release (the example's source zip + metrics.json - the runnable app, without
+# the stack library) when a vX.Y.Z tag is pushed.
 # PRs run the same build and tests without publishing.
 #
 # Unlike the C++/C# siblings, there is no language build step here at all: Python is
@@ -14,7 +15,9 @@
 # THE STACK BINARY IS NEVER PACKAGED. The CAS BACnet Stack (library and adapter) is a
 # separate, commercially licensed product: CI builds the library only to test this example,
 # and neither it nor the adapter goes into any uploaded artifact or release asset. A user
-# builds the library from the submodule (README.md). The Package step below checks this.
+# builds the library from the submodule (README.md). The Package step below checks this, and
+# the next step runs the packaged app without the library: it must print the series'
+# missing-library message and exit 1.
 #
 # The CAS BACnet Stack is a PRIVATE git submodule: the repository secret CAS_STACK_PAT must
 # hold a PAT with read access to chipkin/cas-bacnet-stack.
@@ -155,10 +158,32 @@ jobs:
                 README.md TUTORIAL.md CHANGELOG.md LICENSE -x '*__pycache__*'
             cp README.md LICENSE dist/
           fi
-          # The CAS BACnet Stack is never redistributed: refuse to upload any binary.
-          if find dist -type f | grep -iE '\.(dll|so|node|lib|a|pdb|exp|dylib)$'; then
-            echo "FAIL: a stack binary is in dist/"; exit 1
+          # The CAS BACnet Stack is never redistributed: refuse any stack library or addon
+          # (CASBACnetStack* / libCASBACnetStack* / *.node), loose or inside the zip.
+          if { find dist -type f; unzip -Z1 dist/*.zip 2>/dev/null; } | grep -iE '(^|/)(lib)?CASBACnetStack[^/]*$|\.node$'; then
+            echo "FAIL: a CAS BACnet Stack library is in dist/"; exit 1
           fi
+
+      # Owner ruling 2b: the release is the app without the stack library, and it must say
+      # so clearly. Run the packaged app, unzipped on its own with no stack anywhere, and
+      # check the first line of its message and its exit code.
+      - name: The packaged app without the stack library says so and exits 1
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          rm -rf "$RUNNER_TEMP/packaged" && mkdir -p "$RUNNER_TEMP/packaged"
+          unzip -q dist/BACnetProfileExampleBSSPython.zip -d "$RUNNER_TEMP/packaged"
+          cd "$RUNNER_TEMP/packaged"
+          set +e
+          python main.py --port 47823 > stdout.txt 2> stderr.txt
+          code=$?
+          set -e
+          cat stdout.txt stderr.txt
+          [ "$code" = "1" ] || { echo "FAIL: exit code $code, want 1"; exit 1; }
+          first=$(head -n 1 stderr.txt | tr -d '\r')
+          [ "$first" = "ERROR: This example cannot run without the CAS BACnet Stack library." ] \
+            || { echo "FAIL: first line was: $first"; exit 1; }
+          python main.py --version   # works without the library
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -191,8 +216,8 @@ jobs:
               cp "$f" "release/$name"
             fi
           done
-          if find release -type f | grep -iE '\.(dll|so|node|lib|a|pdb|exp|dylib)$'; then
-            echo "FAIL: a stack binary is in the release assets"; exit 1
+          if { find release -type f; unzip -Z1 release/*.zip 2>/dev/null; } | grep -iE '(^|/)(lib)?CASBACnetStack[^/]*$|\.node$'; then
+            echo "FAIL: a CAS BACnet Stack library is in the release assets"; exit 1
           fi
           ls -l release
       - uses: softprops/action-gh-release@v2

@@ -210,10 +210,14 @@ What you do have to build, once, is the **CAS BACnet Stack library** that
 
 ### Build the CAS BACnet Stack library
 
-`main.py` loads the library from the stack submodule's own `bin/` folder -
-`submodules/cas-bacnet-stack/bin/CASBACnetStack_x64_Release.dll` on Windows,
-`submodules/cas-bacnet-stack/bin/libCASBACnetStack_x64_Release.so` on Linux -
-and nowhere else. Build it there, from the submodule:
+`main.py` looks for the library - `CASBACnetStack_x64_Release.dll` on Windows,
+`libCASBACnetStack_x64_Release.so` on Linux - in two places, in this order:
+
+1. the **run directory**, the folder that holds `main.py`;
+2. a development checkout's `submodules/cas-bacnet-stack/bin/`, where building
+   the stack puts it.
+
+In a checkout, build it into the submodule's `bin/`:
 
 **Windows** - the stack's `CASBACnetStack.vcxproj`, configuration
 `ReleaseDll|x64`, from a "Developer PowerShell for VS" (or give `MSBuild.exe`'s
@@ -240,9 +244,37 @@ g++ -shared -fPIC -std=c++17 -O2 \
 (One command over ~640 source files; it takes a while.) The stack's own
 `.gitignore` already ignores `bin/`, so the submodule stays clean.
 
-Do not copy the library into this repository: it is part of the licensed
+Do not commit the library to this repository: it is part of the licensed
 stack, this repository's `.gitignore` refuses every library file name, and CI
 never puts it into a release.
+
+### Releases do not include the stack
+
+A [release](https://github.com/chipkin/BACnetProfileExample-B-SS-Python/releases)
+is the example's source (`BACnetProfileExampleBSSPython.zip`) **without** the
+CAS BACnet Stack. Run on its own, it stops before any BACnet call, prints this
+to stderr and exits with code 1 (`--help` and `--version` still work):
+
+```
+ERROR: This example cannot run without the CAS BACnet Stack library.
+
+  Missing file: CASBACnetStack_x64_Release.dll
+  Looked in:    C:\...\BACnetProfileExample-B-SS-Python
+                C:\...\BACnetProfileExample-B-SS-Python\submodules\cas-bacnet-stack\bin
+
+The CAS BACnet Stack is a commercially licensed (paid) library from Chipkin.
+It is not included in this release, so the example cannot start without it.
+
+  - To license the CAS BACnet Stack: https://store.chipkin.com/contact-us
+  - Licensed customers: build the library from the cas-bacnet-stack submodule
+    (see README.md) and place CASBACnetStack_x64_Release.dll next to this executable.
+```
+
+A licensed customer running a release puts the stack next to `main.py`: the
+library built from the submodule (above), and the stack's two Python adapter
+files from the submodule's `adapters/python/` (`CASBACnetStackAdapter.py`,
+`CASBACnetStackAdapterBindings.py`) - `main.py` looks for those in its own
+folder first, too. CI checks the message on every build.
 
 ## Run
 
@@ -364,9 +396,10 @@ Python talks to the stack through `ctypes`:
   stack's own adapter from there. It is generated from the stack's C headers;
   a fix to it belongs in the stack, never in a copy here.
 - **An explicit load step, like C++.** `main.py` calls
-  `ctypes.CDLL(<submodule>/bin/<libname>)` then `bacnet.bind(library)` itself,
-  before any `BACnetStack_*` call - the C++ edition's `LoadBACnetFunctions()`.
-  A missing or wrong-architecture library fails there, with a clear message.
+  `ctypes.CDLL(<run directory or submodule bin>/<libname>)` then `bind()`
+  itself, before any `BACnetStack_*` call - the C++ edition's
+  `LoadBACnetFunctions()`. A missing or unloadable library stops it there with
+  the missing-library message above, never a traceback.
 - **A separately built stack library.** There is no "compile the stack into the
   executable" mode for Python (the C++ edition's default). You build the
   shared library once, from the submodule (above).

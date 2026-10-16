@@ -40,7 +40,8 @@ import CASBACnetStackAdapterBindings as bacnet
 from common.simple_udp import SimpleUDP
 from common import cas_example_helper as helper
 
-bacnet.bind(ctypes.CDLL(os.path.join(CAS_BACNET_STACK, "bin", libname)))
+bacnet.bind(ctypes.CDLL(library_path))  # main.py: the run directory, then <submodule>/bin
+# (not found: helper.print_missing_stack_library(libname, folders); exit 1)
 if helper.handle_help_and_version_args(sys.argv, APP_NAME, APP_VERSION):
     sys.exit(0)
 port = helper.parse_port_arg(sys.argv, 47808)

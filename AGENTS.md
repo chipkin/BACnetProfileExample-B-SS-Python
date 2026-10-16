@@ -103,9 +103,14 @@ it).
   - never a command-line option or a menu key.
 - **Read-only.** WriteProperty is never enabled and there is no
   `BACnetStack_RegisterCallbackSetProperty*` call.
-- **Explicit library load**, like the C++ `LoadBACnetFunctions()`: `main()`
-  does `ctypes.CDLL(<submodule>/bin/<libname>)` + `bacnet.bind(library)` before
-  any `BACnetStack_*` call, even before `--version`.
+- **Explicit library load**, like the C++ `LoadBACnetFunctions()`:
+  `main()`'s `load_cas_bacnet_stack()` looks in the run directory (the folder of
+  `main.py`), then `submodules/cas-bacnet-stack/bin/`, does `ctypes.CDLL` +
+  `bind()` before any `BACnetStack_*` call. Nothing imports or loads the stack
+  at module import time. Without it (or if `ctypes` cannot load it) the example
+  prints the series' missing-library message
+  (`helper.print_missing_stack_library()`, owner ruling 2b - do not reword it)
+  to stderr and exits 1, never a traceback; `--help` / `--version` still work.
 - Every `BACnetStack_*` setup call's return value is checked; a failure prints
   which call failed and `main()` returns 1.
 - Every `Get*Property` callback ends with an `error_code` pointer. Leave it
@@ -143,8 +148,9 @@ it).
 
 Bump `APP_VERSION` in `main.py` and add an entry to
 [CHANGELOG.md](CHANGELOG.md), then tag `vX.Y.Z`. The GitHub Actions workflow
-builds the stack library, smoke-tests and Wire-Tests the example, and publishes
-the example's own files (never the stack library or adapter).
+builds the stack library, smoke-tests and Wire-Tests the example, checks the
+packaged app prints the missing-library message without the stack, and
+publishes the example's own files (never the stack library or adapter).
 
 ## License
 

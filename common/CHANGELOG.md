@@ -3,6 +3,54 @@
 All notable changes to the vendored Python `common/` helpers. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.0] - 2026-10-16
+
+Brings the Python edition up to the C++ `common/` 3.4.0 conventions a
+single-port example uses, and uses the stack's adapter in place.
+
+### Added
+
+- `poll_key()` / `KeyCommand` (`NONE`, `HELP`, `QUIT`, `ARROW_UP`,
+  `ARROW_DOWN`), `restore_input()`, `print_help()` and
+  `print_interactive_commands()` - the C++ edition's `PollKey()` and friends,
+  moved here from `main.py`. Windows console: `msvcrt`; POSIX: non-blocking
+  stdin plus cbreak mode on a terminal (the C++ `EnableRawInput()`), so a pipe
+  works too; Windows with a redirected stdin: a daemon thread reads the pipe
+  (with `os.read()` on the descriptor - a buffered reader's lock held at exit
+  is a fatal error) and queues `q` / `h`. A harness that writes `q` to the
+  example's stdin (the series' `wiretest/`) stops it cleanly on every
+  platform.
+- `handle_help_and_version_args()`, `parse_port_arg()` and
+  `parse_device_id_arg()` - the C++ edition's `HandleHelpAndVersionArgs()`,
+  `ParsePortArg()` and `ParseDeviceIdArg()`, with the same messages: an
+  invalid value prints a warning and the default is used. They replace the
+  `argparse` validators `parse_port` and `parse_device_id`.
+- `setup_udp()` - binds the socket and prints `FYI: Listening for BACnet/IP on
+  UDP port <n> (Network Port <i>).` or the bind error, as the C++ `SetupUDP()`.
+- `SimpleUDP.port` - the UDP port the socket is bound to; `SimpleUDP.send()`
+  returns the number of bytes sent.
+- An `RX <n> bytes from <ip>:<port> (Network Port <i>)` / `TX <n> bytes to
+  <ip>:<port> [(broadcast)] (Network Port <i>)` console line for every
+  datagram, the C++ edition's format (without its decoded-frame suffix).
+
+### Changed
+
+- The adapter is imported from the stack submodule's own
+  `adapters/python/` (`import CASBACnetStackAdapterBindings`, which `main.py`
+  puts on `sys.path`), not from a vendored `cas_bacnet_stack/` copy.
+- The send callback sends a frame with a NULL / length-0 connection string
+  (the stack's "broadcast on this data link") to the local subnet broadcast on
+  the bound port, instead of dropping it (C++ `common/` 3.2.0); and a broadcast
+  addressed to this socket's own address and port to the local subnet
+  broadcast, instead of unicasting it to itself (C++ `common/` 3.4.0, stack
+  issue #3933). A connection string of 1-5 octets is still refused.
+- The receive callback truncates an over-long datagram to the stack's buffer
+  (as the C++ edition does) instead of dropping it, and copies with
+  `ctypes.memmove`.
+- `print_version()` prints `CAS BACnet Stack version: X.Y.Z.W` and a third
+  line, `Common helper (common/) version: <COMMON_VERSION>`, as the C++
+  edition does.
+
 ## [1.0.0] - 2026-09-16
 
 ### Added

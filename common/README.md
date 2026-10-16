@@ -13,39 +13,49 @@ next Python example in the series starts by copying this folder.
 `COMMON_VERSION` in `cas_example_helper.py`, changelog in
 `common/CHANGELOG.md`. The Python common versions independently of the
 C++/C#/Node `common/` (each at its own version) - same rules, separate
-lineage. This copy starts at **1.0.0**: the first Python `common/`, built
-against the `submodules/cas-bacnet-stack` `6.x` branch's current
-adapter/callback API. See `common/CHANGELOG.md` for what's in it and how the
-Python binding mechanism differs from the C++/C# editions.
+lineage. This copy is **1.1.0**, built against the
+`submodules/cas-bacnet-stack` Stack Pin (`6.x` @ `64b2cfac5`) and its Python
+adapter, which it imports in place from the submodule's `adapters/python/`
+(`main.py` puts that folder on `sys.path`; no adapter file is copied into this
+repository). It follows the C++ `common/` 3.4.0 conventions a single-port
+example uses. See `common/CHANGELOG.md` for what's in it and how the Python
+binding mechanism differs from the C++/C# editions.
 
 ## What's here
 
 | File | What it is |
 |---|---|
 | `simple_udp.py` | The UDP socket the application owns: bind, poll for inbound datagrams (non-blocking `recvfrom()`, no background thread), send. The stack never touches the socket - it pulls datagrams through the receive callback. |
-| `cas_example_helper.py` | `register_common_callbacks()` (receive/send/system-time + the 6-byte IPv4 connection string, port big-endian, written here ONCE), `send_i_am()`, `get_local_ipv4()`, and CLI validators for use with `argparse`. |
+| `cas_example_helper.py` | `setup_udp()` and `register_common_callbacks()` (receive/send/system-time + the 6-byte IPv4 connection string, port big-endian, written here ONCE; an RX / TX console line per datagram; a length-0 connection string, or a broadcast addressed to this socket itself, goes to the local subnet broadcast), `send_i_am()`, `get_local_ipv4()`, the command line (`handle_help_and_version_args()`, `parse_port_arg()`, `parse_device_id_arg()`), the version banner (`print_version()`, with `COMMON_VERSION`) and the keys (`poll_key()`, `print_help()`, `restore_input()`). |
 | `cas_bacnet_stack_example_constants.py` | The handful of BACnet enumeration values this example needs, spelled out as named constants so this file diffs 1:1 against the C++/C# editions' equivalents. |
 
 ## How main.py uses it
 
 ```python
-import ctypes
-from cas_bacnet_stack.CASBACnetStackAdapter import libname
-import cas_bacnet_stack.CASBACnetStackAdapterBindings as bacnet
+import ctypes, os, sys
+CAS_BACNET_STACK = os.path.join(REPOSITORY, "submodules", "cas-bacnet-stack")
+sys.path.insert(0, os.path.join(CAS_BACNET_STACK, "adapters", "python"))  # the adapter, in place
+from CASBACnetStackAdapter import libname
+import CASBACnetStackAdapterBindings as bacnet
 from common.simple_udp import SimpleUDP
-from common import cas_example_helper
+from common import cas_example_helper as helper
 
-library = ctypes.CDLL(libname)
-bacnet.bind(library)
+bacnet.bind(ctypes.CDLL(os.path.join(CAS_BACNET_STACK, "bin", libname)))
+if helper.handle_help_and_version_args(sys.argv, APP_NAME, APP_VERSION):
+    sys.exit(0)
+port = helper.parse_port_arg(sys.argv, 47808)
 
 udp = SimpleUDP()
-udp.setup(port)
-cas_example_helper.register_common_callbacks(udp, NETWORK_PORT_INSTANCE)  # before AddDevice
+helper.setup_udp(udp, port, NETWORK_PORT_INSTANCE)
+helper.register_common_callbacks(udp, NETWORK_PORT_INSTANCE)  # before AddDevice
 # ... AddDevice, objects, services ...
-cas_example_helper.send_i_am(device_instance, port, NETWORK_PORT_INSTANCE)  # announce on start-up
+helper.send_i_am(device_instance, port, NETWORK_PORT_INSTANCE)  # announce on start-up
 while running:
     bacnet.BACnetStack_Tick()
+    if helper.poll_key() == helper.KeyCommand.QUIT:
+        running = False
     time.sleep(0.001)
+helper.restore_input()
 ```
 
 Unlike the C++/C# `common/`, there is no `RestartKind`/`RequestRestart`/

@@ -9,14 +9,19 @@ venv/
 .mypy_cache/
 *.log
 
-# The native CAS BACnet Stack library is a BUILD ARTIFACT (built from the
-# submodule - see README.md "Build the native CAS BACnet Stack library"), not
-# source - do not commit it.
-CASBACnetStack_x64_Release.dll
-CASBACnetStack_x64_Release.pdb
-libCASBACnetStack_x64_Release.so
-CASBACnetStack_x86_Release.dll
-libCASBACnetStack_arm7_Release.so
+# The CAS BACnet Stack library is a BUILD ARTIFACT of the separately licensed stack, built
+# from the submodule into submodules/cas-bacnet-stack/bin/ (README.md "Build the CAS BACnet
+# Stack library"), and is never committed or released from this repository - whatever its
+# name or platform.
+*.dll
+*.so
+*.so.*
+*.dylib
+*.lib
+*.a
+*.exp
+*.pdb
+*.node
 
 dist/
 smoke.log

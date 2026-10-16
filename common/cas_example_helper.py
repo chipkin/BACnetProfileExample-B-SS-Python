@@ -7,24 +7,36 @@
 # examples' common/CASExampleHelper.{h,cpp} (and the C# edition's
 # common/CASExampleHelper.cs), same responsibilities, same names:
 #
-#   - register_common_callbacks(): the three transport/time callbacks every
-#     example needs (receive, send, system time). This is where the 6-byte
-#     IPv4 connection string lives: 4 IP octets then the port in BIG-endian
-#     byte order - written here ONCE so no example re-derives it.
+#   - setup_udp() / register_common_callbacks(): bind the BACnet/IP socket and
+#     register the three transport/time callbacks every example needs
+#     (receive, send, system time). This is where the 6-byte IPv4 connection
+#     string lives: 4 IP octets then the port in BIG-endian byte order -
+#     written here ONCE so no example re-derives it. Every datagram received
+#     or sent is printed as one console line ("RX 25 bytes from ...",
+#     "TX 25 bytes to ... (broadcast)"), the C++ edition's format.
 #   - send_i_am(): the unsolicited I-Am every example transmits on start-up.
 #   - get_local_ipv4(): the primary interface's address/netmask/broadcast (the
 #     OS-level plumbing the Network Port object reports).
-#   - CLI helpers (--deviceID/--port validation) + print_version().
+#   - the command line (handle_help_and_version_args(), parse_port_arg(),
+#     parse_device_id_arg()), the version banner (print_version()) and the
+#     interactive keys (poll_key(), print_help(), restore_input()).
+#
+# THE ADAPTER IS USED IN PLACE. This module imports the CAS BACnet Stack's own
+# generated Python adapter, CASBACnetStackAdapterBindings.py, straight from
+# submodules/cas-bacnet-stack/adapters/python/ - main.py puts that folder on
+# sys.path before importing this module. Nothing of the adapter is copied into
+# this repository: it is part of the commercially licensed stack, and the
+# stack's generator (ci_scripts/generate-python-adapter.js) owns it.
 #
 # The stack PULLS datagrams: its receive callback asks for one queued
 # datagram per call and the stack never touches the socket. The application
 # (SimpleUDP) owns the socket - keep that split in your own project.
 #
-# PORT-KEYED TRANSPORT (this example's stack pin, branch `6.x`). A link is
-# identified by the Network Port object's INSTANCE, not by a transport-type
-# enumeration: BACnetStack_RegisterCallbackReceiveMessageForPort /
+# PORT-KEYED TRANSPORT. A link is identified by the Network Port object's
+# INSTANCE, not by a transport-type enumeration:
+# BACnetStack_RegisterCallbackReceiveMessageForPort /
 # BACnetStack_RegisterCallbackSendMessageForPort take/report a
-# networkPortInstance, and BACnetStack_SendIAm's fifth argument is that same
+# networkPortInstance, and BACnetStack_SendIAm's fourth argument is that same
 # instance. This example has exactly one Network Port (instance 1,
 # "Vermilion" - see NETWORK_PORT_INSTANCE in main.py), so every call below
 # names it directly rather than looping over a port table.
@@ -40,15 +52,18 @@
 # Get*Property callbacks.
 # =============================================================================
 
+import ctypes
+import os
 import socket
-from argparse import ArgumentTypeError
+import sys
+import time
 
-import cas_bacnet_stack.CASBACnetStackAdapterBindings as bacnet
+import CASBACnetStackAdapterBindings as bacnet  # from submodules/cas-bacnet-stack/adapters/python/
 
 # The version of the vendored common/ helper itself (NOT the example's
 # version). Bump it whenever anything in common/ changes, and record the
 # change in common/CHANGELOG.md.
-COMMON_VERSION = "1.0.0"
+COMMON_VERSION = "1.1.0"
 
 # Every ctypes.CFUNCTYPE callback object registered with the stack is kept
 # here for the life of the process - see the module docstring above. Do NOT
@@ -81,15 +96,15 @@ def get_local_ipv4():
     read the REAL subnet mask. The Python standard library has no portable
     equivalent (a real one needs a third-party package such as `netifaces` or
     `psutil`, which this example deliberately avoids to stay stdlib-only -
-    see README.md "Why no netmask discovery"). Instead this function opens a
-    UDP socket "connected" to a public address (no packet is actually sent -
-    UDP connect() only asks the OS to pick a local source address/route) to
-    learn the outbound-interface IP, and ASSUMES a /24 (255.255.255.0)
-    netmask, which is correct on most flat home/office/lab networks but not
-    on every network. If your subnet is not a /24, pass a real IP_Address /
-    IP_Subnet_Mask into the Network Port some other way (e.g. read it from
-    the OS's own tools, or add a --netmask flag) rather than trusting this
-    function blindly in production.
+    see common/README.md "Why no netmask discovery"). Instead this function
+    opens a UDP socket "connected" to a public address (no packet is actually
+    sent - UDP connect() only asks the OS to pick a local source
+    address/route) to learn the outbound-interface IP, and ASSUMES a /24
+    (255.255.255.0) netmask, which is correct on most flat home/office/lab
+    networks but not on every network. If your subnet is not a /24, pass a
+    real IP_Address / IP_Subnet_Mask into the Network Port some other way
+    (e.g. read it from the OS's own tools, or add a --netmask flag) rather
+    than trusting this function blindly in production.
     """
     address = "127.0.0.1"
     try:
@@ -114,42 +129,53 @@ def get_local_ipv4():
 
 
 # -----------------------------------------------------------------------------
-# The three common callbacks
+# The socket and the three common callbacks
 # -----------------------------------------------------------------------------
 
+def setup_udp(udp, port, network_port_instance):
+    """Bind `udp` (a SimpleUDP) to `port`. Prints why and returns False if the
+    port cannot be bound - for example, another BACnet device already owns
+    it."""
+    try:
+        udp.setup(port)
+    except OSError as ex:
+        print(f"Error: Failed to bind UDP port {port} (Network Port {network_port_instance}): {ex}")
+        return False
+    print(f"FYI: Listening for BACnet/IP on UDP port {port} (Network Port {network_port_instance}).")
+    return True
+
+
 def register_common_callbacks(udp, network_port_instance):
-    """Register the receive/send/system-time callbacks against one
+    """Register the receive/send/system-time callbacks against one bound
     SimpleUDP, for the given Network Port object instance. Call once, after
-    bacnet.bind(library) and before BACnetStack_AddDevice.
+    bacnet.bind(library) and setup_udp(), and before BACnetStack_AddDevice.
 
     Args:
-        udp: the SimpleUDP this example owns.
+        udp: the SimpleUDP this example owns, already bound (setup_udp()).
         network_port_instance: the instance passed to
             BACnetStack_AddNetworkPortObject for this socket (this example:
             NETWORK_PORT_INSTANCE, 1).
     """
+    # Read once, not on every send: the address the send callback compares
+    # against, and the local subnet broadcast it substitutes.
+    local = get_local_ipv4()
 
     def on_receive(message, max_message_length, source_connection_string,
-                    source_connection_string_length, destination_connection_string,
-                    destination_connection_string_length, max_connection_string_length,
-                    out_network_port_instance):
-        # The out-params arrive UNINITIALIZED - write every one we do not
-        # fill with real data, or the stack reads garbage.
-        source_connection_string_length[0] = 0
-        destination_connection_string_length[0] = 0
+                   source_connection_string_length, destination_connection_string,
+                   destination_connection_string_length, max_connection_string_length,
+                   out_network_port_instance):
         if max_connection_string_length < 6:
             return 0  # cannot even fit an IPv4 connection string
         datagram = udp.recv()
         if datagram is None:
             return 0  # nothing waiting this tick
-        length = len(datagram.message)
-        if length > max_message_length:
-            print(f"Error: dropping {length}-byte datagram from "
-                  f"{datagram.from_ip}:{datagram.from_port} - larger than the "
-                  f"stack's {max_message_length}-byte receive buffer.")
-            return 0
-        for i in range(length):
-            message[i] = datagram.message[i]
+        # A datagram larger than the stack's buffer is truncated to that length
+        # (the C++ edition does the same): the stack fails to decode it and
+        # ignores it.
+        length = min(len(datagram.message), max_message_length)
+        ctypes.memmove(message, datagram.message, length)
+        print(f"RX {length} bytes from {datagram.from_ip}:{datagram.from_port} "
+              f"(Network Port {network_port_instance})")
         # 6-byte IPv4 connection string: 4 IP octets, then the port BIG-endian.
         octets = [int(part) for part in datagram.from_ip.split(".")]
         for i in range(4):
@@ -161,19 +187,40 @@ def register_common_callbacks(udp, network_port_instance):
         out_network_port_instance[0] = network_port_instance
         return length
 
+    # A NULL / length-0 connection string is the stack saying "broadcast on
+    # this data link" (BACnetStack_RegisterCallbackSendMessageForPort's
+    # contract in CASBACnetStackDLL.h): it goes to the local subnet broadcast
+    # on this socket's port (C++ common/ 3.2.0). broadcast = True WITH an
+    # address normally means "send to this address"; the one exception is
+    # THIS socket's own address and port, which the stack passes when it
+    # means "this subnet" (a Device_Address_Binding Who-Is copies the address
+    # of the last I-Am heard - this device's own, looped back; stack issue
+    # #3933), so that also goes to the local subnet broadcast (C++ common/
+    # 3.4.0). Every other address is sent to as given. A connection string of
+    # 1-5 octets is not a BACnet/IP address and is refused.
     def on_send(message, message_length, connection_string, connection_string_length,
                 send_network_port_instance, broadcast):
-        if connection_string_length < 6:
+        if send_network_port_instance != network_port_instance:
+            return 0  # this example owns exactly one Network Port
+        is_broadcast = bool(broadcast)
+        if not connection_string or connection_string_length == 0:
+            to_ip, to_port = local.broadcast, udp.port
+            is_broadcast = True
+        elif connection_string_length < 6:
             return 0
-        to_ip = ".".join(str(connection_string[i]) for i in range(4))
-        to_port = (connection_string[4] << 8) | connection_string[5]
-        buffer = bytes(message[i] for i in range(message_length))
-        udp.send(buffer, to_ip, to_port)
-        return message_length
+        else:
+            to_ip = ".".join(str(connection_string[i]) for i in range(4))
+            to_port = (connection_string[4] << 8) | connection_string[5]
+            if broadcast and to_port == udp.port and to_ip == local.address:
+                to_ip = local.broadcast
+        sent = udp.send(ctypes.string_at(message, message_length), to_ip, to_port)
+        print(f"TX {sent} bytes to {to_ip}:{to_port}{' (broadcast)' if is_broadcast else ''} "
+              f"(Network Port {send_network_port_instance})")
+        return sent
 
+    # CASBACnetTime: int64 seconds since the UNIX epoch.
     def on_get_system_time():
-        import time
-        return int(time.time())  # unix epoch SECONDS
+        return int(time.time())
 
     receive_cb = bacnet.FPCallbackReceiveMessageForPort(on_receive)
     send_cb = bacnet.FPCallbackSendMessageForPort(on_send)
@@ -202,12 +249,13 @@ def send_i_am(device_instance, udp_port, network_port_instance):
 
     Args:
         network_port_instance: the Network Port object to send on (this
-            example: NETWORK_PORT_INSTANCE, 1) - BACnetStack_SendIAm's fifth
+            example: NETWORK_PORT_INSTANCE, 1) - BACnetStack_SendIAm's fourth
             argument identifies the LINK by Network Port instance, not by a
             transport-type enumeration.
-    """
-    import ctypes
 
+    Returns:
+        BACnetStack_SendIAm's own result.
+    """
     local = get_local_ipv4()
     octets = [int(part) for part in local.broadcast.split(".")]
     connection_string = (ctypes.c_uint8 * 6)(
@@ -217,44 +265,227 @@ def send_i_am(device_instance, udp_port, network_port_instance):
     return bacnet.BACnetStack_SendIAm(
         device_instance, connection_string, 6, network_port_instance,
         True,  # broadcast
-        0,     # destinationNetwork: local network
+        0,     # destinationNetwork: the local network only (not the global 0xFFFF)
         None, 0,
     )
 
 
 # -----------------------------------------------------------------------------
-# CLI helpers
+# Version banner and command line
 # -----------------------------------------------------------------------------
 
 def print_version(app_name, app_version):
     print(f"{app_name} v{app_version}")
-    print("CAS BACnet Stack v{}.{}.{}.{}".format(
+    print("CAS BACnet Stack version: {}.{}.{}.{}".format(
         bacnet.BACnetStack_GetAPIMajorVersion(),
         bacnet.BACnetStack_GetAPIMinorVersion(),
         bacnet.BACnetStack_GetAPIPatchVersion(),
         bacnet.BACnetStack_GetAPIBuildVersion(),
     ))
+    # The vendored common/ helper has its own version (see common/CHANGELOG.md)
+    # so it is easy to tell whether this example's copy is stale.
+    print(f"Common helper (common/) version: {COMMON_VERSION}")
 
 
-def parse_port(raw):
-    """argparse `type=` callback for --port: an integer 1..65535."""
+def print_interactive_commands():
+    """Just the interactive key list, with no version banner - so the two
+    callers that already printed one (print_help for the 'h' key, and the
+    --help handler) do not print it twice."""
+    print("Commands:")
+    print("  h     - show this help (version + commands)")
+    print("  q     - quit")
+    print("  up    - increase Analog Input 1 by 1.1")
+    print("  down  - decrease Analog Input 1 by 1.1")
+
+
+def print_help(app_name, app_version):
+    print_version(app_name, app_version)
+    print_interactive_commands()
+
+
+def handle_help_and_version_args(argv, app_name, app_version):
+    """--help / -h / /? print the version banner, the options and the keys;
+    --version prints the version banner. Returns True if one was handled (the
+    caller exits), False otherwise."""
+    for argument in argv[1:]:
+        if argument in ("--help", "-h", "/?"):
+            print_version(app_name, app_version)
+            print()
+            print("Usage: python main.py [options]")
+            print()
+            print("Options:")
+            print("  --help, -h        Show this help and exit.")
+            print("  --version         Show version information and exit.")
+            print("  --deviceID <n>    BACnet device instance (0..4194302). Each example in")
+            print("                    this series has its own default so several can run on")
+            print("                    one subnet at once.")
+            print("  --port <n>        BACnet/IP UDP port (1..65535). Default 47808 (0xBAC0).")
+            print("                    Use a non-default port to avoid clashing with another")
+            print("                    BACnet device already on 47808 on this host.")
+            print()
+            print_interactive_commands()  # version banner already printed above
+            return True
+        if argument == "--version":
+            print_version(app_name, app_version)
+            return True
+    return False
+
+
+def _parse_whole_number(text):
+    """The value of `text` if the WHOLE token is a non-negative decimal
+    integer, else None. int() alone would accept " 12", "+12" and "1_2"; the
+    C++ edition's strtol + end-pointer check accepts none of them, and a typo
+    must be rejected rather than silently obeyed as a different number."""
+    if not text or not text.isdigit() or not text.isascii():
+        return None
+    return int(text)
+
+
+def parse_port_arg(argv, default_port):
+    """--port <n>: 1..65535. An invalid value prints a warning and the default
+    is used (the C++ edition's ParsePortArg)."""
+    for i in range(1, len(argv) - 1):
+        if argv[i] == "--port":
+            port = _parse_whole_number(argv[i + 1])
+            if port is not None and 0 < port <= 65535:
+                return port
+            print(f'Warning: ignoring invalid --port "{argv[i + 1]}" (want 1..65535); using {default_port}.')
+    return default_port
+
+
+def parse_device_id_arg(argv, default_device_id):
+    """--deviceID <n>: 0..4194302 (4194303 is the "unconfigured" wildcard and
+    is not a usable instance). An invalid value prints a warning and the
+    default is used (the C++ edition's ParseDeviceIdArg)."""
+    for i in range(1, len(argv) - 1):
+        if argv[i] == "--deviceID":
+            device_id = _parse_whole_number(argv[i + 1])
+            if device_id is not None and device_id < 4194303:
+                return device_id
+            print(f'Warning: ignoring invalid --deviceID "{argv[i + 1]}" (want 0..4194302); '
+                  f"using {default_device_id}.")
+    return default_device_id
+
+
+# -----------------------------------------------------------------------------
+# Interactive keys
+#
+# poll_key() returns the key pressed since the last call, or KeyCommand.NONE -
+# it never blocks, so the main loop's BACnetStack_Tick() keeps running:
+#
+#   - Windows console: msvcrt.kbhit() / getch() (the C++ edition's
+#     _kbhit() / _getch()).
+#   - POSIX: stdin is made non-blocking and, when it is a terminal, put into
+#     cbreak mode (no line buffering, no echo); each call read()s what is
+#     waiting (the C++ edition's EnableRawInput() + read()). A pipe works the
+#     same way, which is how a test harness writes 'q' to stop the example.
+#   - Windows, stdin redirected (a pipe): a pipe has no non-blocking "is a key
+#     waiting" check there, so a daemon thread reads it and queues 'q' / 'h'
+#     for poll_key(). The thread touches nothing but that queue - never the
+#     stack, never the socket. (The C++ edition does not read a redirected
+#     stdin on Windows at all; this lets the Wire Tests' harness stop the
+#     example with 'q' on every platform.)
+# -----------------------------------------------------------------------------
+
+class KeyCommand:
+    NONE = "none"
+    HELP = "help"         # 'h' - show version + commands
+    QUIT = "quit"         # 'q' - exit
+    ARROW_UP = "up"       # up arrow
+    ARROW_DOWN = "down"   # down arrow
+
+
+_LETTER_KEYS = {"h": KeyCommand.HELP, "q": KeyCommand.QUIT}
+_input_configured = False
+_restore_actions = []
+_piped_keys = None
+
+
+def _configure_input():
+    global _input_configured, _piped_keys
+    _input_configured = True
+    if sys.stdin is None:
+        return
+    if os.name == "nt":
+        if not sys.stdin.isatty():
+            import queue
+            import threading
+            _piped_keys = queue.SimpleQueue()
+            descriptor = sys.stdin.fileno()
+
+            # os.read() on the raw descriptor, not sys.stdin.buffer: the
+            # buffered reader holds a lock while it waits, and a daemon thread
+            # still holding it when the interpreter exits is a fatal error.
+            def read_piped_keys():
+                try:
+                    while True:
+                        character = os.read(descriptor, 1)
+                        if not character:
+                            return  # end of input
+                        key = _LETTER_KEYS.get(character.decode("ascii", "replace").lower())
+                        if key is not None:
+                            _piped_keys.put(key)
+                except (OSError, ValueError):
+                    return
+
+            threading.Thread(target=read_piped_keys, daemon=True).start()
+        return
+
+    # POSIX. Non-blocking FIRST and unconditionally (a pipe with no data yet
+    # must never block the tick loop), then cbreak mode only for a terminal.
+    import fcntl
+    import termios
+    import tty
+    descriptor = sys.stdin.fileno()
+    flags = fcntl.fcntl(descriptor, fcntl.F_GETFL)
+    fcntl.fcntl(descriptor, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+    _restore_actions.append(lambda: fcntl.fcntl(descriptor, fcntl.F_SETFL, flags))
+    if os.isatty(descriptor):
+        original = termios.tcgetattr(descriptor)
+        tty.setcbreak(descriptor)
+        _restore_actions.append(lambda: termios.tcsetattr(descriptor, termios.TCSADRAIN, original))
+
+
+def poll_key():
+    """The key pressed since the last call, or KeyCommand.NONE. Never blocks."""
+    if not _input_configured:
+        _configure_input()
+    if sys.stdin is None:
+        return KeyCommand.NONE
+    if os.name == "nt":
+        if _piped_keys is not None:
+            return KeyCommand.NONE if _piped_keys.empty() else _piped_keys.get()
+        import msvcrt
+        if not msvcrt.kbhit():
+            return KeyCommand.NONE
+        character = msvcrt.getch()
+        if character in (b"\x00", b"\xe0"):  # arrow / function key prefix
+            second = msvcrt.getch()
+            if second == b"H":
+                return KeyCommand.ARROW_UP
+            if second == b"P":
+                return KeyCommand.ARROW_DOWN
+            return KeyCommand.NONE
+        return _LETTER_KEYS.get(character.decode("ascii", "replace").lower(), KeyCommand.NONE)
+
     try:
-        value = int(raw)
-    except ValueError:
-        raise ArgumentTypeError(f'--port expects an integer 1..65535, got "{raw}"')
-    if value < 1 or value > 65535:
-        raise ArgumentTypeError(f'--port expects an integer 1..65535, got "{raw}"')
-    return value
+        typed = os.read(sys.stdin.fileno(), 3)
+    except (BlockingIOError, InterruptedError):
+        return KeyCommand.NONE
+    except OSError:
+        return KeyCommand.NONE
+    if not typed:
+        return KeyCommand.NONE  # end of input
+    if len(typed) >= 3 and typed[0] == 27 and typed[1] == ord("["):  # ESC [ A/B = arrow keys
+        return {ord("A"): KeyCommand.ARROW_UP, ord("B"): KeyCommand.ARROW_DOWN}.get(typed[2], KeyCommand.NONE)
+    return _LETTER_KEYS.get(chr(typed[0]).lower(), KeyCommand.NONE)
 
 
-def parse_device_id(raw):
-    """argparse `type=` callback for --deviceID: an integer 0..4194302.
-    4194303 is the BACnet "unconfigured" sentinel - a real device may not use
-    it."""
-    try:
-        value = int(raw)
-    except ValueError:
-        raise ArgumentTypeError(f'--deviceID expects an integer 0..4194302, got "{raw}"')
-    if value < 0 or value > 4194302:
-        raise ArgumentTypeError(f'--deviceID expects an integer 0..4194302, got "{raw}"')
-    return value
+def restore_input():
+    """Put the terminal back the way it was (POSIX); nothing to do on Windows.
+    Call once before the program exits."""
+    while _restore_actions:
+        try:
+            _restore_actions.pop()()
+        except (OSError, ValueError):
+            pass

@@ -5,12 +5,13 @@
 # =============================================================================
 # A small, self-contained set of the BACnet enumeration values this example
 # project needs. The CAS BACnet Stack defines the FULL enumerations inside
-# cas_bacnet_stack/CASBACnetStackAdapter.py (the bacnet_* dictionaries) - this
+# the stack's own submodules/cas-bacnet-stack/adapters/python/
+# CASBACnetStackAdapter.py (the bacnet_* dictionaries), used in place - this
 # file only adds the handful of names that module does NOT already define
 # (mostly because that module's dictionaries are hand-written and have not
 # grown every BACnet enumeration yet, or because a value here is more
 # convenient as a plain constant than a dict lookup at every call site).
-# Where the vendored adapter already has an equivalent value, this file reuses
+# Where the adapter already has an equivalent value, this file reuses
 # it directly instead of duplicating it - see the comment on each block below.
 #
 # Every value matches the BACnet standard (ANSI/ASHRAE 135) and the CAS
@@ -22,7 +23,7 @@
 # =============================================================================
 
 # -- BACnet object types (Object_Type enumeration) --------------------------
-#    Already in cas_bacnet_stack.CASBACnetStackAdapter.bacnet_objectType
+#    Already in the adapter's CASBACnetStackAdapter.bacnet_objectType
 #    (e.g. bacnet_objectType["analogInput"] == 0). This example uses plain
 #    integer constants below instead of dict lookups, for a 1:1 diff against
 #    the C++/C# editions' OBJECT_TYPE_* names.
@@ -33,7 +34,7 @@ OBJECT_TYPE_MULTI_STATE_INPUT = 13
 OBJECT_TYPE_NETWORK_PORT = 56
 
 # -- BACnet property identifiers (Property_Identifier enumeration) ----------
-#    Already in cas_bacnet_stack.CASBACnetStackAdapter.bacnet_propertyIdentifier
+#    Already in the adapter's CASBACnetStackAdapter.bacnet_propertyIdentifier
 #    (all-lowercase keys, e.g. "objectname"). Spelled out here as
 #    PROPERTY_IDENTIFIER_* constants, matching the other editions' names 1:1.
 PROPERTY_IDENTIFIER_OBJECT_NAME = 77
@@ -60,25 +61,25 @@ PROPERTY_IDENTIFIER_IP_DEFAULT_GATEWAY = 401
 
 # -- BACnet engineering units (Engineering_Units enumeration) ---------------
 #    Full list: submodules/cas-bacnet-stack/source/BACnetEngineeringUnits.h
-#    Also in cas_bacnet_stack.CASBACnetStackAdapter.bacnet_engineeringUnits
+#    Also in the adapter's CASBACnetStackAdapter.bacnet_engineeringUnits
 #    ("degreescelsius": 62) - spelled out here for the 1:1 diff.
 ENGINEERING_UNITS_DEGREES_CELSIUS = 62
 
 # -- BACnet polarity (Polarity enumeration, for Binary objects) -------------
 #    Full list: submodules/cas-bacnet-stack/source/BACnetPolarity.h
-#    Not in the vendored adapter's dictionaries - defined here.
+#    Not in the adapter's dictionaries - defined here.
 POLARITY_NORMAL = 0
 
 # -- BACnet/IP mode (BACnetIPMode enumeration, for the Network Port) --------
 #    Full list: submodules/cas-bacnet-stack/source/BACnetIPMode.h
-#    Not in the vendored adapter's dictionaries - defined here.
+#    Not in the adapter's dictionaries - defined here.
 BACNET_IP_MODE_NORMAL = 0
 
 # -- BACnet services (Services_Supported enumeration) -----------------------
 #    Used with BACnetStack_SetServiceEnabled() to turn individual services
 #    on/off. These are BIT NUMBERS, not service-choice values - see the
 #    docstring on BACnetStack_SetServiceEnabled in
-#    cas_bacnet_stack/CASBACnetStackAdapterBindings.py.
+#    submodules/cas-bacnet-stack/adapters/python/CASBACnetStackAdapterBindings.py.
 SERVICE_READ_PROPERTY = 12
 SERVICE_WHO_HAS = 33
 SERVICE_WHO_IS = 34
@@ -100,7 +101,7 @@ NETWORK_PORT_PROTOCOL_LEVEL_BACNET_APPLICATION = 2
 # The lowest protocol layer references this sentinel instead of another port.
 # Also used as the default networkPortInstance for a single-port device that
 # never calls AddNetworkPortObject (BACNET_NETWORK_PORT_DEFAULT). Not in the
-# vendored adapter's dictionaries - defined here.
+# adapter's dictionaries - defined here.
 NETWORK_PORT_REFERENCE_PORT_NONE = 4194303
 
 # -- Network_Number_Quality (BACnetNetworkNumberQuality, cl. 12.56.11). Says

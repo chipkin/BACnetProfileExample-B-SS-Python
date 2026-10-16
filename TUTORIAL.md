@@ -20,9 +20,37 @@ mistake in this example is silent, and the section it lives in is
 
 The example is intentionally small so it's easy to change.
 
-**Change a sensor's value or name** - edit the constants / callbacks in
-`main.py` (e.g. `g_analog_input_1_value`, or the `"Bronze"` string in
-`get_property_character_string`).
+**Change a sensor's name** - edit the `"Bronze"` (etc.) string in
+`get_property_character_string` in `main.py`.
+
+**Replace the Simulation with your hardware** - section 2 of `main.py`
+(`sensor_simulation_tick()`) is the only code that changes the sensor values;
+the `get_property_*` callbacks just hand back `g_analog_input_1_value`,
+`g_binary_input_1_value` and `g_multi_state_input_1_value`. Replace the
+function body with your own sampling and keep the callbacks as they are. Sample
+on a timer and only *store* the result: the callbacks run inside
+`BACnetStack_Tick()`, so a callback that waits for an ADC conversion or an I2C
+transaction delays every BACnet request. (If you sample on another thread, that
+thread only stores values and never calls a `BACnetStack_*` function - the
+stack is single-threaded.) Delete `SENSOR_FAULT_FILE_VARIABLE` and its
+environment-variable code - it is a test hook, not something to ship.
+
+**Report a sensor fault** - `Reliability` is how a BACnet sensor says "do not
+trust this reading" (cl. 12.2.9). It is optional, so it takes two steps: enable
+it with `BACnetStack_SetPropertyEnabled(... PROPERTY_IDENTIFIER_RELIABILITY ...)`
+and serve it from `get_property_enumerated`. The stack then builds the FAULT
+bit of `Status_Flags` from it by itself (cl. 12.2.7) - you never serve
+`Status_Flags`. Once it is enabled, **always** answer it: the stack reads
+`Reliability` through your callback every time a client reads `Status_Flags`,
+and a callback that declines does not fail loudly - the stack substitutes the
+datatype default, `0`, which is `no-fault-detected`. A forgotten branch
+therefore reports a healthy sensor forever, with FAULT never set.
+(`tests/failure_modes_test.py` is what catches that: it breaks the sensor and
+expects the fault.) Set it from your hardware's own diagnostics - `open-loop`
+(4) for a broken wire, `shorted-loop` (5), `over-range` (2) / `under-range` (3)
+for a reading on the rails, `no-sensor` (1) for a sensor that stopped
+answering. If you add Out_Of_Service writes later, cl. 12.2.10 makes
+`Reliability` writable while the object is out of service.
 
 **Change the device identity before you ship** - vendor ID, vendor name,
 model name, description, firmware revision and device name are all in the
@@ -58,7 +86,7 @@ easy to miss and the one BTL will fail you for.
 >
 > | Property | If you forget to serve it | Loud? |
 > |---|---|:--:|
-> | `Present_Value` | Error (`value-not-initialized`) | yes |
+> | `Present_Value` | Error (`read-access-denied`) | yes |
 > | `Object_Name` | reads back as the literal string **`"undefined"`** | **no** |
 > | `Units` | reads back as **`no-units` (95)** | **no** |
 > | `Out_Of_Service` | served on property + type alone - works by accident | n/a |
@@ -102,7 +130,7 @@ if not bacnet.BACnetStack_AddObject(g_device_instance, c.OBJECT_TYPE_ANALOG_INPU
 
 # 3) serve its Present_Value + Object_Name:
 #    get_property_real:              AI/2 + Present_Value -> value[0] = g_analog_input_2_value
-#    get_property_character_string:  AI/2 + Object_Name    -> _return_character_string("Bronze 2", ...)
+#    get_property_character_string:  AI/2 + Object_Name    -> return_character_string("Bronze 2", ...)
 
 # 4) DO NOT SKIP: serve its Units, in get_property_enumerated.
 #    Units is a REQUIRED property of an Analog Input. The existing check reads
@@ -182,6 +210,8 @@ property?" For Analog Input 1, the whole picture:
 | `Present_Value` | **you** | `get_property_real` |
 | `Object_Name` | **you** | `get_property_character_string` |
 | `Units` | **you** | `get_property_enumerated` |
+| `Reliability` *(optional, enabled)* | **you** | `get_property_enumerated` - `no-fault-detected`, or `open-loop` while the simulated wire is broken |
+| `Status_Flags` FAULT bit | **stack** | derived from `Reliability` (cl. 12.2.7) |
 
 Every object, not just this one, is in [docs/PICS.md](docs/PICS.md).
 
@@ -212,26 +242,27 @@ a richer profile - see the series table in [README.md](README.md).
 
 ## Interactive keys are a simplification
 
-The C++ edition polls raw console keys (including arrow-key escape
-sequences) every millisecond in its own `while` loop. The C# edition uses
-.NET's built-in non-blocking `Console.KeyAvailable` + `Console.ReadKey(true)`.
-Python has no single stdlib mechanism that works identically cross-platform,
-so `main.py` picks per-OS: `msvcrt.kbhit()`/`getch()` on Windows (a direct
-poll, no escape-sequence decoding needed - `msvcrt` already reports arrow
-keys as a two-byte prefix + code), and `termios`/`tty.setcbreak()` +
-`select.select(..., timeout=0)` on POSIX (put the terminal into cbreak mode,
-poll non-blocking, and hand-decode the `ESC [ A`/`ESC [ B` arrow-key escape
-sequence - closer to the C++ edition's approach there).
+The keys (`h`, `q`, up / down) are read by `common/cas_example_helper.py`'s
+`poll_key()`, the Python edition of the C++ `common/`'s `PollKey()`, called once
+per pass of `main()`'s loop. It never blocks, so `BACnetStack_Tick()` keeps
+running:
 
-The one thing this approach cannot do is read keys when stdin is **not** a
-real, non-redirected console (a background process, a CI smoke test, output
-piped to a file): `main.py` checks `sys.stdin.isatty()` once at start-up and
-skips key polling entirely when it is false - the device still runs
-(`BACnetStack_Tick()` keeps ticking, and Ctrl+C/SIGTERM still work via the
-`signal.signal()` handlers registered in `main()`), it just cannot be nudged
-from the keyboard. This mirrors the C# edition's `Console.IsInputRedirected`
-check and the CI smoke test in `.github/workflows/release.yml`, which never
-touches the keyboard.
+- **Windows console** - `msvcrt.kbhit()` / `getch()`, like the C++ edition's
+  `_kbhit()` / `_getch()` (`msvcrt` reports an arrow key as a two-byte prefix +
+  code).
+- **POSIX** - stdin is made non-blocking and, when it is a terminal, put into
+  cbreak mode; each call `os.read()`s what is waiting and decodes the
+  `ESC [ A` / `ESC [ B` arrow sequences - the C++ edition's `EnableRawInput()` +
+  `read()`. `restore_input()` puts the terminal back on exit.
+- **Windows, stdin redirected** (a pipe) - a pipe there has no non-blocking
+  "is a key waiting" check, so a daemon thread reads it and queues `q` / `h`
+  for `poll_key()`. That thread touches only that queue, never the stack or the
+  socket. It is what lets the Wire Tests stop the example by writing `q` on
+  every platform (the C++ edition ignores a redirected stdin on Windows).
+
+A pipe carries no arrow keys, so on a redirected stdin only `h` and `q` work.
+Ctrl+C / SIGTERM stop the device cleanly in every case, through the
+`signal.signal()` handlers registered in `main()`.
 
 ## Reviewing your device
 
@@ -247,11 +278,14 @@ rather than against "it looked fine in the explorer":
 3. Diff a new object of a type against the existing one of that type. Anything
    that differs and shouldn't is a callback that matched on instance.
 4. Send a **WriteProperty** to any object and confirm it is rejected - a B-SS
-   Smart Sensor is read-only, and this example never registers a
-   `Set*Property` callback, so the stack has nothing to consult and declines
-   on its own.
+   Smart Sensor is read-only; this example never enables WriteProperty, so the
+   stack answers Reject `unrecognized-service`.
 5. Read `State_Text[4]` on Multi-State Input 1 (which only has 3 states) and
    confirm `invalid-array-index`, not an empty string.
+6. Run the Wire Tests (`python tests/run_wire_tests.py`, README "Wire Tests").
+   They do steps 2, 4 and 5 over the wire, check the readings follow the
+   Simulation, and break the simulated sensor wire to check `Reliability` and
+   the FAULT bit.
 
 ### Keeping the PICS honest
 
@@ -280,10 +314,12 @@ defect, not a feature.
 
 | Symptom | Cause / fix |
 |---------|-------------|
-| `OSError: [WinError 126] The specified module could not be found` (or `OSError: ... cannot open shared object file`) from `ctypes.CDLL(...)` | The native library is missing from `main.py`'s directory (or the OS library search path). See README.md [Build the native CAS BACnet Stack library](README.md#build-the-native-cas-bacnet-stack-library) - it is a separate step from running `main.py`. |
+| `Error: failed to load the CAS BACnet Stack: .../submodules/cas-bacnet-stack/bin/...` with `Could not find module` (or `cannot open shared object file`) | The stack library has not been built into the submodule's `bin/` folder. See README.md [Build the CAS BACnet Stack library](README.md#build-the-cas-bacnet-stack-library) - it is a separate step from running `main.py`. |
+| `ModuleNotFoundError: No module named 'CASBACnetStackAdapter'` | The stack submodule is not checked out, so its `adapters/python/` is missing. Run `git submodule update --init --recursive`. |
 | `OSError` mentioning a mismatched architecture (`%1 is not a valid Win32 application`, or similar on Linux) | The native library's architecture does not match this Python interpreter's. This example expects an x64 build - make sure both your Python interpreter and the DLL/.so you built are x64. |
-| `AttributeError: function 'BACnetStack_...' not found` from `bind()` | The vendored `cas_bacnet_stack/CASBACnetStackAdapterBindings.py` and the native library are different stack versions. Re-copy `cas_bacnet_stack/` from the submodule's current `adapters/python/` and rebuild the native library from the same submodule commit. |
-| App prints *"could not bind UDP port 47808"* | Another BACnet program is already using 47808. Stop it, or run with `--port <n>`. |
+| `Error: failed to load the CAS BACnet Stack: ... function 'BACnetStack_...' not found` | The library in `bin/` was built from a different stack commit than the adapter in `adapters/python/`. Rebuild the library from the submodule as it is checked out now. |
+| App prints *"Failed to bind UDP port 47808"* | Another BACnet program is already using 47808. Stop it, or run with `--port <n>`. |
 | Client sends Who-Is but sees no I-Am | Firewall is blocking UDP 47808, or the client and device are on different subnets (Who-Is is a broadcast). Allow the port; test on the same subnet first. |
-| A WriteProperty you sent is rejected | Correct behaviour - this device is read-only. There is no `BACnetStack_RegisterCallbackSetProperty*` call anywhere in `main.py`; the stack declines every write without consulting the application. |
+| A WriteProperty you sent is rejected | Correct behaviour - this device is read-only. WriteProperty is never enabled and there is no `BACnetStack_RegisterCallbackSetProperty*` call anywhere in `main.py`; the stack answers Reject `unrecognized-service`. |
+| Analog Input 1 `Reliability` reads `open-loop` and the reading is frozen | The test-only broken-wire hook is on: `CAS_EXAMPLE_TEST_SENSOR_FAULT_FILE` names a file that exists. Unset the variable or delete the file. |
 | The process crashes with no Python traceback, sometime after start-up | Almost always an unrooted `ctypes.CFUNCTYPE` callback that was garbage-collected. Grep your changes for `CFUNCTYPE(` and confirm every result is appended to a module-level list before being passed to a `RegisterCallback*` call - see AGENTS.md's callback-rooting rule. |

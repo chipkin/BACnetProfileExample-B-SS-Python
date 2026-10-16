@@ -45,6 +45,7 @@ class SimpleUDP:
 
     def __init__(self):
         self._socket = None
+        self.port = 0  # the UDP port the socket is bound to (0 before setup())
 
     def setup(self, port):
         """Bind the socket. Raises OSError on bind failure (for example:
@@ -58,6 +59,7 @@ class SimpleUDP:
         # this class is polled once per tick from main.py's own loop, not
         # from a background thread.
         self._socket.setblocking(False)
+        self.port = port
 
     def recv(self):
         """The next queued inbound datagram, or None if none arrived."""
@@ -69,21 +71,26 @@ class SimpleUDP:
         except (BlockingIOError, InterruptedError):
             return None  # nothing waiting this tick
         except OSError as ex:
+            # Windows reports an ICMP "port unreachable" for an earlier send
+            # as an error on the NEXT receive (WSAECONNRESET); it is not about
+            # this datagram, so it is logged and skipped like an empty queue.
             print("Error: UDP receive failed:", ex)
             return None
         from_ip, from_port = address
         return ReceivedDatagram(message, from_ip, from_port)
 
     def send(self, message, to_ip, to_port):
-        """Send one datagram. Fire-and-forget by design: UDP gives no
-        delivery guarantee anyway, so a send error is logged, not raised -
-        same behaviour as the C++/C# SimpleUDP.Send."""
+        """Send one datagram; returns the number of bytes sent (0 on error).
+        Fire-and-forget by design: UDP gives no delivery guarantee anyway, so
+        a send error is logged, not raised - same behaviour as the C++/C#
+        SimpleUDP.Send."""
         if self._socket is None:
-            return
+            return 0
         try:
-            self._socket.sendto(message, (to_ip, to_port))
+            return self._socket.sendto(message, (to_ip, to_port))
         except OSError as ex:
             print(f"Error: UDP send to {to_ip}:{to_port} failed:", ex)
+            return 0
 
     def shutdown(self):
         """Close the socket."""

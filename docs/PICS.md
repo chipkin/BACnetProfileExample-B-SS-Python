@@ -18,16 +18,18 @@ see [README.md](../README.md).
 | **Vendor Identifier** | 389 |
 | **Product Name** | CAS BACnet Stack Example - B-SS (Python) |
 | **Product Model Number** | CAS BACnet Stack Example - B-SS |
-| **Application Software Version** | 1.0.0 |
-| **Firmware Revision** | 1.0.0 |
+| **Application Software Version** | 1.1.0 |
+| **Firmware Revision** | 6.0.23.0 (the CAS BACnet Stack version) |
 | **BACnet Protocol Version** | 1 |
-| **BACnet Protocol Revision** | 24 |
+| **BACnet Protocol Revision** | 30 |
 
 **Product Description:** a minimal read-only BACnet/IP sensing device built on
 the CAS BACnet Stack. It presents three sensor objects (Analog Input, Binary
-Input, Multi-State Input), answers ReadProperty for every required property of
-every object, and is discoverable by Who-Is / I-Am and Who-Has / I-Have. It is a
-tutorial for implementers of the B-SS profile.
+Input, Multi-State Input) whose readings follow a sensor Simulation, answers
+ReadProperty for every required property of every object, reports a broken
+sensor through Analog Input 1's Reliability and the FAULT bit of Status_Flags,
+and is discoverable by Who-Is / I-Am and Who-Has / I-Have. It is a tutorial for
+implementers of the B-SS profile.
 
 ## 2. BACnet standardized device profile (Annex L)
 
@@ -71,8 +73,14 @@ its own.
 
 ## 5. Segmentation capability
 
-Segmentation is **not supported** in either direction
-(`Segmentation_Supported` = `no-segmentation`). `Max_APDU_Length_Accepted` is
+Segmentation is **supported in both directions**
+(`Segmentation_Supported` = `segmented-both`), by the stack: at `6.x` @
+`64b2cfac5` the customer build compiles `STACK_OPTION_SEGMENTATION` in (stack
+#2992), and this example keeps the stack's defaults - `Max_Segments_Accepted`
+16 and `APDU_Segment_Timeout` 5000 ms. Table 12-13 footnote 1: "These
+properties are required if, and shall be present only if, segmentation of any
+kind is supported" - they are not rows in section 11 because its generator
+lists only unconditionally required properties. `Max_APDU_Length_Accepted` is
 1476 octets, the BACnet/IP maximum.
 
 ## 6. Standard object types supported
@@ -83,7 +91,7 @@ is writable.
 | Object type | Instance | Object_Name | Optional properties supported |
 |---|:---:|---|---|
 | Device | 389001 | Chipkin Example B-SS | Description |
-| Analog Input | 1 | Bronze | - |
+| Analog Input | 1 | Bronze | Reliability |
 | Binary Input | 1 | Emerald | - |
 | Multi-State Input | 1 | Hot Pink | State_Text |
 | Network Port | 1 | Vermilion | - |
@@ -98,6 +106,12 @@ time with `--port`.
 
 BBMD is not supported, Foreign Device registration is not supported, and
 BACnet/SC, MS/TP, Ethernet (Annex H) and PTP are not supported.
+
+The stack's Network Port object still lists its BACnet/IP properties in
+`Property_List` - including `IP_DNS_Server`, `FD_BBMD_Address` and
+`FD_Subscription_Lifetime` - and every one of them reads as a value
+(`FD_BBMD_Address` is a Null host, port 0: no BBMD configured). The Wire Tests
+read every listed property of every object.
 
 ## 8. Device address binding
 
@@ -139,14 +153,14 @@ Every object this example creates, and every REQUIRED property of each (per ANSI
 | Protocol_Object_Types_Supported | BACnetObjectTypesSupported | stack | no |
 | Object_List | BACnetARRAY[N] of BACnetObjectIdentifier | stack | no |
 | Max_APDU_Length_Accepted | Unsigned | stack default, accepted (`CAS_BACNET_DEVICE_DEFAULT_MAX_APDU_LENGTH_ACCEPTED`) | no |
-| Segmentation_Supported | BACnetSegmentation | stack default, accepted (`BACnetSegmentation::noSegmentation`) | no |
+| Segmentation_Supported | BACnetSegmentation | stack default, accepted (`BACnetSegmentation::segmentedBoth` with `STACK_OPTION_SEGME) | no |
 | APDU_Timeout | Unsigned | stack default, accepted (`CAS_BACNET_DEVICE_DEFAULT_APDU_TIMEOUT`) | no |
 | Number_Of_APDU_Retries | Unsigned | stack default, accepted (`CAS_BACNET_DEVICE_DEFAULT_NUMBER_OF_APDU_RETRIES`) | no |
 | Device_Address_Binding | BACnetLIST of BACnetAddressBinding | stack | no |
 | Database_Revision | Unsigned | stack default, accepted (Generic UnsignedInteger default: `0`) | no |
 | Property_List | BACnetARRAY[N] of BACnetPropertyIdentifier | stack | no |
 
-### Analog Input 1 "Bronze" - REAL, degrees Celsius; starts at 21.5
+### Analog Input 1 "Bronze" - REAL, degrees Celsius; the sensor Simulation ramps it 18.0 .. 26.0 at 0.5 C a second. Reliability reads no-fault-detected, or open-loop while the simulated sensor wire is broken; the stack derives Status_Flags FAULT from it
 
 | Property | Datatype | Served by | Writable |
 |---|---|---|:---:|
@@ -156,11 +170,12 @@ Every object this example creates, and every REQUIRED property of each (per ANSI
 | Present_Value | Real | app | no |
 | Status_Flags | BACnetStatusFlags | stack | no |
 | Event_State | BACnetEventState | stack default, accepted (Generic Enumerated default: `0`) | no |
+| Reliability *(optional, enabled)* | BACnetReliability | app | no |
 | Out_Of_Service | Boolean | app | no |
 | Units | BACnetEngineeringUnits | app | no |
 | Property_List | BACnetARRAY[N] of BACnetPropertyIdentifier | stack | no |
 
-### Binary Input 1 "Emerald" - starts inactive
+### Binary Input 1 "Emerald" - the sensor Simulation toggles it every 3 s, starting inactive
 
 | Property | Datatype | Served by | Writable |
 |---|---|---|:---:|
@@ -174,7 +189,7 @@ Every object this example creates, and every REQUIRED property of each (per ANSI
 | Polarity | BACnetPolarity | app | no |
 | Property_List | BACnetARRAY[N] of BACnetPropertyIdentifier | stack | no |
 
-### Multi-state Input 1 "Hot Pink" - state 1 of 3: On, Off, Auto
+### Multi-state Input 1 "Hot Pink" - 3 states: On, Off, Auto; the sensor Simulation steps 1 -> 2 -> 3 -> 1 every 4 s
 
 | Property | Datatype | Served by | Writable |
 |---|---|---|:---:|

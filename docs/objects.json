@@ -43,14 +43,17 @@
         "Present_Value",
         "Object_Name",
         "Units",
-        "Out_Of_Service"
+        "Out_Of_Service",
+        "Reliability"
       ],
-      "enabled": [],
+      "enabled": [
+        "Reliability"
+      ],
       "writable": [],
       "accepted": [
         "Event_State"
       ],
-      "note": "REAL, degrees Celsius; starts at 21.5"
+      "note": "REAL, degrees Celsius; the sensor Simulation ramps it 18.0 .. 26.0 at 0.5 C a second. Reliability reads no-fault-detected, or open-loop while the simulated sensor wire is broken; the stack derives Status_Flags FAULT from it"
     },
     {
       "type": "Binary Input",
@@ -67,7 +70,7 @@
       "accepted": [
         "Event_State"
       ],
-      "note": "starts inactive"
+      "note": "the sensor Simulation toggles it every 3 s, starting inactive"
     },
     {
       "type": "Multi-state Input",
@@ -87,7 +90,7 @@
       "accepted": [
         "Event_State"
       ],
-      "note": "state 1 of 3: On, Off, Auto"
+      "note": "3 states: On, Off, Auto; the sensor Simulation steps 1 -> 2 -> 3 -> 1 every 4 s"
     },
     {
       "type": "Network Port",

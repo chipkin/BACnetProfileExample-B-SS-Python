@@ -1,13 +1,20 @@
-# Build the native CAS BACnet Stack library, smoke-test the B-SS Python example, and publish
-# a GitHub Release (script + native library + metrics.json) when a vX.Y.Z tag is pushed. PRs
-# run the same build + smoke test without publishing.
+# Build the CAS BACnet Stack library, smoke-test and Wire-Test the B-SS Python example, and
+# publish a GitHub Release (the example's source + metrics.json) when a vX.Y.Z tag is pushed.
+# PRs run the same build and tests without publishing.
 #
 # Unlike the C++/C# siblings, there is no language build step here at all: Python is
 # interpreted, so `main.py` runs directly - `pip install` of anything beyond the standard
 # library is NOT required (see README.md "Prerequisites"). The only compiled artifact is the
-# native CAS BACnet Stack shared library from the stack submodule's C++ source (MSBuild's
-# ReleaseDll|x64 configuration on Windows, g++ -shared on Linux - see README.md "Build the
-# native CAS BACnet Stack library"), copied next to main.py so ctypes.CDLL() can find it.
+# CAS BACnet Stack shared library, built from the stack submodule's C++ source into the
+# submodule's own bin/ folder (MSBuild's ReleaseDll|x64 configuration on Windows, g++ -shared
+# on Linux - see README.md "Build the CAS BACnet Stack library"), where main.py loads it with
+# ctypes. main.py uses the stack's generated Python adapter in place from
+# submodules/cas-bacnet-stack/adapters/python/.
+#
+# THE STACK BINARY IS NEVER PACKAGED. The CAS BACnet Stack (library and adapter) is a
+# separate, commercially licensed product: CI builds the library only to test this example,
+# and neither it nor the adapter goes into any uploaded artifact or release asset. A user
+# builds the library from the submodule (README.md). The Package step below checks this.
 #
 # The CAS BACnet Stack is a PRIVATE git submodule: the repository secret CAS_STACK_PAT must
 # hold a PAT with read access to chipkin/cas-bacnet-stack.
@@ -61,37 +68,37 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Compile-check main.py and common/ (no pip install needed - stdlib only)
+      - name: Compile-check main.py, common/ and tests/ (no pip install needed - stdlib only)
         shell: bash
-        run: python -m py_compile main.py common/*.py cas_bacnet_stack/*.py
+        run: python -m py_compile main.py common/*.py tests/*.py
 
-      - name: Build the native CAS BACnet Stack library (Windows - MSBuild ReleaseDll|x64)
+      - name: Build the CAS BACnet Stack library (Windows - MSBuild ReleaseDll|x64)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $msbuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
             -latest -products * -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
-          & $msbuild submodules\cas-bacnet-stack\projects\msvs\BuildCASBACnetStack.sln `
+          & $msbuild submodules\cas-bacnet-stack\projects\msvs\CASBACnetStack\CASBACnetStack.vcxproj `
             /p:Configuration=ReleaseDll /p:Platform=x64 /p:PlatformToolset=v143 /m
           if ($LASTEXITCODE -ne 0) { throw "MSBuild failed with exit code $LASTEXITCODE" }
-          Copy-Item submodules\cas-bacnet-stack\bin\CASBACnetStack_x64_Release.dll .
-          Get-ChildItem CASBACnetStack_x64_Release.dll
+          Get-ChildItem submodules\cas-bacnet-stack\bin\CASBACnetStack_x64_Release.dll
 
-      - name: Build the native CAS BACnet Stack library (Linux - g++ shared)
+      - name: Build the CAS BACnet Stack library (Linux - g++ shared)
         if: runner.os == 'Linux'
         shell: bash
         run: |
+          mkdir -p submodules/cas-bacnet-stack/bin
           g++ -shared -fPIC -std=c++17 -O2 \
               -I submodules/cas-bacnet-stack/source \
               submodules/cas-bacnet-stack/source/*.cpp \
-              -o libCASBACnetStack_x64_Release.so
-          ls -la libCASBACnetStack_x64_Release.so
+              -o submodules/cas-bacnet-stack/bin/libCASBACnetStack_x64_Release.so
+          ls -la submodules/cas-bacnet-stack/bin/libCASBACnetStack_x64_Release.so
 
       - name: Smoke test + metrics (starts, binds, stays up; measures time to 'ready')
         shell: bash
         run: |
           start=$(date +%s%3N)
-          python3 main.py --port 47822 > smoke.log 2>&1 &
+          python main.py --port 47822 > smoke.log 2>&1 &
           PID=$!
           ready_ms=""
           for i in $(seq 1 100); do
@@ -102,9 +109,10 @@ jobs:
           if kill -0 "$PID" 2>/dev/null; then kill "$PID" 2>/dev/null || true; else echo "FAIL: device exited early"; cat smoke.log; exit 1; fi
           [ -n "$ready_ms" ] || { echo "FAIL: no 'ready' line"; cat smoke.log; exit 1; }
           cat smoke.log
-          bytes=$(stat -c %s "${{ matrix.nativelib }}" 2>/dev/null || wc -c < "${{ matrix.nativelib }}")
-          sha=$(sha256sum "${{ matrix.nativelib }}" | cut -c1-16)
-          stackver=$(grep -oE 'CAS BACnet Stack v[0-9.]+' smoke.log | head -1 | grep -oE '[0-9.]+' || true)
+          lib="submodules/cas-bacnet-stack/bin/${{ matrix.nativelib }}"
+          bytes=$(stat -c %s "$lib" 2>/dev/null || wc -c < "$lib")
+          sha=$(sha256sum "$lib" | cut -c1-16)
+          stackver=$(grep -oE 'CAS BACnet Stack version: [0-9.]+' smoke.log | head -1 | grep -oE '[0-9.]+$' || true)
           appver=$(grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' smoke.log | head -1 || true)
           cat > "${{ matrix.metrics }}" <<EOF
           {
@@ -117,7 +125,7 @@ jobs:
             "nativelib_bytes": $bytes,
             "nativelib_sha256_prefix": "$sha",
             "startup_ms_to_ready": $ready_ms,
-            "python_version": "$(python3 --version 2>&1 | cut -d' ' -f2)",
+            "python_version": "$(python --version 2>&1 | cut -d' ' -f2)",
             "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "git_ref": "${{ github.ref_name }}"
           }
@@ -125,17 +133,32 @@ jobs:
           cat "${{ matrix.metrics }}"
           { echo '### metrics (${{ matrix.os }})'; echo '```json'; cat "${{ matrix.metrics }}"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Package
+      # The Wire Tests: a Python client (the Peer) discovers the sensor, reads it following
+      # the sensor Simulation, and drives its Failure Modes (tests/README.md). Python 3
+      # standard library only.
+      - name: Wire Tests
+        if: runner.os == 'Linux'
+        shell: bash
+        run: python tests/run_wire_tests.py --exe main.py
+
+      - name: Package (the example's own files - never the stack library or adapter)
         shell: bash
         run: |
           mkdir -p dist
-          cp main.py dist/
-          cp -r common dist/
-          cp -r cas_bacnet_stack dist/
-          cp "${{ matrix.nativelib }}" dist/ 2>/dev/null || true
           cp "${{ matrix.metrics }}" dist/
-          cp README.md TUTORIAL.md LICENSE dist/ 2>/dev/null || true
-          cp docs/PICS.md dist/ 2>/dev/null || true
+          # The source and docs ship once, from the Linux build, as one zip (folders keep
+          # their layout): the Windows checkout converts them to CRLF, so the two platforms'
+          # copies would differ byte for byte and the release job's one-copy-per-name check
+          # would refuse them.
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            zip -r dist/BACnetProfileExampleBSSPython.zip main.py common tests wiretest docs \
+                README.md TUTORIAL.md CHANGELOG.md LICENSE -x '*__pycache__*'
+            cp README.md LICENSE dist/
+          fi
+          # The CAS BACnet Stack is never redistributed: refuse to upload any binary.
+          if find dist -type f | grep -iE '\.(dll|so|node|lib|a|pdb|exp|dylib)$'; then
+            echo "FAIL: a stack binary is in dist/"; exit 1
+          fi
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -152,11 +175,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-      # Every platform artifact carries the same docs (README.md, LICENSE, ...).
-      # Uploading two assets with one name makes the release action fail part-way
-      # and leaves a draft release behind (a real tagged release hit this). Flatten the
-      # artifacts into one folder with a single copy of each file name, and stop
-      # if two files share a name but differ.
+      # Every platform artifact could carry a file of the same name. Uploading two assets
+      # with one name makes the release action fail part-way and leaves a draft release
+      # behind (a real tagged release hit this). Flatten the artifacts into one folder with
+      # a single copy of each file name, and stop if two files share a name but differ.
       - name: Collect release assets (one copy of each file name)
         shell: bash
         run: |
@@ -169,6 +191,9 @@ jobs:
               cp "$f" "release/$name"
             fi
           done
+          if find release -type f | grep -iE '\.(dll|so|node|lib|a|pdb|exp|dylib)$'; then
+            echo "FAIL: a stack binary is in the release assets"; exit 1
+          fi
           ls -l release
       - uses: softprops/action-gh-release@v2
         with:

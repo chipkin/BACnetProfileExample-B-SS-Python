@@ -59,7 +59,8 @@
 # object that every BACnet device must have. Each object is given a colour name
 # (a convention shared across this example series):
 #
-#     Device 389001          "Chipkin Example B-SS"    (instance configurable with --deviceID)
+#     Device 389001          "Chipkin Example B-SS"    (instance configurable with --deviceID,
+#                                                       Object_Name with --deviceName)
 #     Analog Input  1        "Bronze"     (REAL, degrees Celsius; ramps 18.0 .. 26.0)
 #     Binary Input  1        "Emerald"    (active / inactive; toggles every 3 s)
 #     Multi-State Input 1    "Hot Pink"   (an enumerated state, 1..3; steps every 4 s)
@@ -75,7 +76,7 @@
 #
 # Interactive keys (handled by the shared helper): h = help, q = quit,
 # up/down = nudge the simulated Analog Input 1 reading by +/-1.1. Command line:
-# --port <n>, --deviceID <n>.
+# --port <n>, --deviceID <n>, --deviceName <text>.
 #
 # All the UDP/stack plumbing lives in common/ so this file can stay focused on
 # the BACnet logic.
@@ -116,7 +117,7 @@ from common import cas_bacnet_stack_example_constants as c  # noqa: E402
 # 1. Example + device configuration
 # -----------------------------------------------------------------------------
 APP_NAME = "BACnet B-SS (Smart Sensor) Example - Python"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 
 # The device instance. BACnet requires this to be configurable, so it defaults
 # to 389001 and can be overridden on the command line with --deviceID. Keep it
@@ -140,17 +141,20 @@ g_device_instance = 389001
 # https://bacnet.org/assigned-vendor-ids/. Update VENDOR_NAME below to match.
 VENDOR_IDENTIFIER = 389
 
-# The Device object's Object_Name.
+# The Device object's Object_Name - the DEFAULT one.
 #
 # THIS IS THE ONE THAT WILL BITE YOU. Object_Name must be unique across the
-# whole BACnet internetwork, and here it is a constant. The device instance is
-# runtime-configurable via --deviceID, so it is easy to ship two units,
-# configure their instances correctly, and still have BOTH announce
-# Object_Name "Chipkin Example B-SS" - a spec violation, and a hard BTL
-# failure. In a real product Object_Name must be per-unit configurable too:
-# derive it from a serial number, DIP switches, a config file, or add a
-# --deviceName argument.
+# whole BACnet internetwork (cl. 12.1.1.4), so it must be per-unit
+# configurable, exactly like the instance. This example takes it at start-up
+# with --deviceName <text> (common/ parse_device_name_arg(), read into
+# g_device_name in main()); DEVICE_NAME is only what a unit announces when
+# nobody configured it. Ship two units without --deviceName and BOTH announce
+# the same Object_Name - a spec violation, and a hard BTL failure. In your
+# product, configure the name per unit (a serial number, DIP switches, a
+# config file, or this argument) and change the default below to something
+# that says "not configured yet".
 DEVICE_NAME = "Chipkin Example B-SS"
+g_device_name = DEVICE_NAME  # --deviceName, or the default
 
 # The Device object's Description. Change it to what YOUR device actually is;
 # this string describes this tutorial.
@@ -501,8 +505,9 @@ def return_character_string(text, value, value_element_count, max_element_count,
     if len(encoded) > max_element_count:
         # Truncate SILENTLY to fit the stack's buffer. max_element_count is
         # MAX_CHARACTER_STRING_SIZE (256 in this build), and our longest
-        # string (DEVICE_DESCRIPTION) fits with room to spare - so this never
-        # trips here. But a stack built with STACK_OPTION_TARGET_EMBEDDED drops
+        # strings fit: DEVICE_DESCRIPTION with room to spare, and a
+        # --deviceName, which parse_device_name_arg() caps at 255 bytes - so
+        # this never trips here. But a stack built with STACK_OPTION_TARGET_EMBEDDED drops
         # that limit to 64, and a long Object_Name or Description would be
         # clipped mid-word with nothing on the wire or console to tell you. If
         # you lengthen any served string, check it against
@@ -546,7 +551,7 @@ def get_property_character_string(device_instance, object_type, object_instance,
     # Object_Name - the colour name for each object.
     if property_identifier == c.PROPERTY_IDENTIFIER_OBJECT_NAME:
         if object_type == c.OBJECT_TYPE_DEVICE and object_instance == g_device_instance:
-            return return_character_string(DEVICE_NAME, value, value_element_count, max_element_count,
+            return return_character_string(g_device_name, value, value_element_count, max_element_count,
                                            encoding_type)
         if object_type == c.OBJECT_TYPE_ANALOG_INPUT and object_instance == ANALOG_INPUT_INSTANCE:
             return return_character_string("Bronze", value, value_element_count, max_element_count,
@@ -617,7 +622,7 @@ def load_cas_bacnet_stack():
 
 
 def main(argv):
-    global g_device_instance, g_bacnet_ip_udp_port, g_analog_input_1_value
+    global g_device_instance, g_device_name, g_bacnet_ip_udp_port, g_analog_input_1_value
     global g_firmware_revision, g_sensor_fault_file
 
     # --- Load the CAS BACnet Stack -------------------------------------------
@@ -632,7 +637,9 @@ def main(argv):
     # --- Command line + version --------------------------------------------
     # --help / --version print and exit, so handle them before we bind a socket.
     # They work without the stack (the banner then says it is not loaded).
-    if helper.handle_help_and_version_args(argv, APP_NAME, APP_VERSION):
+    # show_device_name_cli_option: --help lists --deviceName, which this
+    # example reads.
+    if helper.handle_help_and_version_args(argv, APP_NAME, APP_VERSION, show_device_name_cli_option=True):
         return 0
     if missing is not None:
         helper.print_missing_stack_library(*missing)
@@ -649,6 +656,7 @@ def main(argv):
 
     port = helper.parse_port_arg(argv, 47808)
     g_device_instance = helper.parse_device_id_arg(argv, g_device_instance)
+    g_device_name = helper.parse_device_name_arg(argv, DEVICE_NAME)
     helper.print_version(APP_NAME, APP_VERSION)
 
     # --- Bind the BACnet/IP socket -----------------------------------------
@@ -795,7 +803,7 @@ def main(argv):
     if not helper.send_i_am(g_device_instance, g_bacnet_ip_udp_port, NETWORK_PORT_INSTANCE):
         print("Warning: the start-up I-Am was not sent.")
 
-    print(f"FYI: Device {g_device_instance} (\"{DEVICE_NAME}\") ready. "
+    print(f"FYI: Device {g_device_instance} (\"{g_device_name}\") ready. "
           f"Vendor ID {VENDOR_IDENTIFIER}. Press 'h' for help.")
 
     # --- Graceful Ctrl+C shutdown -------------------------------------------

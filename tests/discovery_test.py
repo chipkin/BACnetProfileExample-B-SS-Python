@@ -3,7 +3,7 @@
 # Public-domain example code (CC0) - see ../LICENSE.
 """B-SS discovery: read every property the smart sensor says it has, the way a client does.
 
-    python3 tests/discovery_test.py [--exe main.py] [--port 47821]
+    python3 tests/discovery_test.py [--exe main.py] [--port 47824]
 
 What a BACnet client such as Chipkin BACnet Explorer does when it discovers a device,
 done over the wire from outside the example:
@@ -47,6 +47,12 @@ EXPECTED_OBJECTS = [DEVICE,
                     (wiretest.OBJECT_TYPE_MULTI_STATE_INPUT, 1),     # "Hot Pink"
                     NETWORK_PORT]
 
+# Database_Revision (cl. 12.11): the stack starts it at 0 and adds 1 for each object the
+# example adds at start-up - the Device and its four objects - and nothing creates, deletes
+# or renames an object afterwards, so it reads 5 for the life of the process (docs/PICS.md).
+PROPERTY_DATABASE_REVISION = 155
+EXPECTED_DATABASE_REVISION = len(EXPECTED_OBJECTS)
+
 # The four properties cl. 12.1.1.4.1 says Property_List does not contain.
 PROPERTY_OBJECT_TYPE = 79
 NOT_IN_PROPERTY_LIST = [wiretest.PROPERTY_OBJECT_IDENTIFIER, wiretest.PROPERTY_OBJECT_NAME,
@@ -72,8 +78,8 @@ def parser():
     arguments.add_argument("--exe", default=bss_setup.default_command(),
                            help="the example's main.py (run with this Python), or a command line that "
                                 "starts it (default: main.py)")
-    arguments.add_argument("--port", type=int, default=47821,
-                           help="the smart sensor's UDP port (default 47821)")
+    arguments.add_argument("--port", type=int, default=47824,
+                           help="the smart sensor's UDP port (default 47824)")
     return arguments
 
 
@@ -155,6 +161,11 @@ def main():
                f"{len(unreadable)} unreadable: " + ", ".join(
                    f"{object_text(object_identifier)} {property_identifier}"
                    for object_identifier, property_identifier in unreadable) if unreadable else "")
+
+        database_revision = client.read_property(args.port, *DEVICE, PROPERTY_DATABASE_REVISION, timeout=2.0)
+        record(f"Device Database_Revision reads {EXPECTED_DATABASE_REVISION}, one per object added at start-up "
+               "(docs/PICS.md)", is_value(database_revision) and database_revision.value == EXPECTED_DATABASE_REVISION,
+               outcome(database_revision))
 
         # The three Explorer reported, by name - listed in Property_List and readable.
         network_port_list = property_lists.get(NETWORK_PORT, [])

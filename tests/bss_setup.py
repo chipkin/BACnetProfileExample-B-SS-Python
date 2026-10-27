@@ -95,8 +95,8 @@ def parser(description):
     arguments.add_argument("--exe", default=default_command(),
                            help="the example's main.py (run with this Python), or a command line that "
                                 "starts it (default: main.py)")
-    arguments.add_argument("--port", type=int, default=47821,
-                           help="the smart sensor's UDP port (default 47821)")
+    arguments.add_argument("--port", type=int, default=47824,
+                           help="the smart sensor's UDP port (default 47824)")
     return arguments
 
 

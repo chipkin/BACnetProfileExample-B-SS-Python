@@ -18,15 +18,16 @@
 #   - get_local_ipv4(): the primary interface's address/netmask/broadcast (the
 #     OS-level plumbing the Network Port object reports).
 #   - the command line (handle_help_and_version_args(), parse_port_arg(),
-#     parse_device_id_arg()), the version banner (print_version()) and the
-#     interactive keys (poll_key(), print_help(), restore_input()).
+#     parse_device_id_arg(), parse_device_name_arg()), the version banner
+#     (print_version()) and the interactive keys (poll_key(), print_help(),
+#     restore_input()).
 #
 # THE ADAPTER IS USED IN PLACE. This module imports the CAS BACnet Stack's own
 # generated Python adapter, CASBACnetStackAdapterBindings.py, straight from
 # submodules/cas-bacnet-stack/adapters/python/ (or from the run directory) -
 # main.py puts those folders on sys.path before importing this module. Nothing of the adapter is copied into
 # this repository: it is part of the commercially licensed stack, and the
-# stack's generator (ci_scripts/generate-python-adapter.js) owns it.
+# stack's generator (_ci_scripts/generate-python-adapter.js) owns it.
 #
 # The stack PULLS datagrams: its receive callback asks for one queued
 # datagram per call and the stack never touches the socket. The application
@@ -69,7 +70,7 @@ except ImportError:
 # The version of the vendored common/ helper itself (NOT the example's
 # version). Bump it whenever anything in common/ changes, and record the
 # change in common/CHANGELOG.md.
-COMMON_VERSION = "1.1.0"
+COMMON_VERSION = "1.2.0"
 
 # Every ctypes.CFUNCTYPE callback object registered with the stack is kept
 # here for the life of the process - see the module docstring above. Do NOT
@@ -329,10 +330,12 @@ def print_help(app_name, app_version):
     print_interactive_commands()
 
 
-def handle_help_and_version_args(argv, app_name, app_version):
+def handle_help_and_version_args(argv, app_name, app_version, show_device_name_cli_option=False):
     """--help / -h / /? print the version banner, the options and the keys;
     --version prints the version banner. Returns True if one was handled (the
-    caller exits), False otherwise."""
+    caller exits), False otherwise. show_device_name_cli_option lists
+    --deviceName, for an example that reads it (parse_device_name_arg(); added
+    in 1.2.0 - the default, False, prints exactly what 1.1.0 printed)."""
     for argument in argv[1:]:
         if argument in ("--help", "-h", "/?"):
             print_version(app_name, app_version)
@@ -345,6 +348,12 @@ def handle_help_and_version_args(argv, app_name, app_version):
             print("  --deviceID <n>    BACnet device instance (0..4194302). Each example in")
             print("                    this series has its own default so several can run on")
             print("                    one subnet at once.")
+            if show_device_name_cli_option:
+                print("  --deviceName <text>")
+                print(f"                    The Device object's Object_Name (1..{MAX_DEVICE_NAME_LENGTH} bytes, no")
+                print("                    control characters). It must be unique across the BACnet")
+                print("                    internetwork, so give every unit its own. Default: this")
+                print("                    example's own name.")
             print("  --port <n>        BACnet/IP UDP port (1..65535). Default 47808 (0xBAC0).")
             print("                    Use a non-default port to avoid clashing with another")
             print("                    BACnet device already on 47808 on this host.")
@@ -391,6 +400,36 @@ def parse_device_id_arg(argv, default_device_id):
             print(f'Warning: ignoring invalid --deviceID "{argv[i + 1]}" (want 0..4194302); '
                   f"using {default_device_id}.")
     return default_device_id
+
+
+# The longest Device Object_Name --deviceName accepts, in UTF-8 bytes.
+MAX_DEVICE_NAME_LENGTH = 255
+
+
+def parse_device_name_arg(argv, default_device_name):
+    """--deviceName <text>: the Device object's Object_Name. Object_Name must be
+    unique across the BACnet internetwork (cl. 12.1.1.4, 12.11), so two units
+    that share a compile-time name are non-conformant the moment both are
+    installed; this makes it per-unit configurable at start-up, the way
+    --deviceID makes the instance configurable. Valid = 1..MAX_DEVICE_NAME_LENGTH
+    bytes of UTF-8 and no control characters (a name must be printable);
+    anything else prints a warning and the default is used. The same rules as
+    the C++ edition's ParseDeviceNameArg()."""
+    for i in range(1, len(argv) - 1):
+        if argv[i] != "--deviceName":
+            continue
+        name = argv[i + 1]
+        try:
+            length = len(name.encode("utf-8"))
+        except UnicodeEncodeError:  # an undecodable command-line byte (a lone surrogate)
+            length = 0
+        printable = 0 < length <= MAX_DEVICE_NAME_LENGTH and not any(
+            ord(character) < 0x20 or ord(character) == 0x7F for character in name)
+        if printable:
+            return name
+        print(f"Warning: ignoring invalid --deviceName (want 1..{MAX_DEVICE_NAME_LENGTH} bytes, "
+              f'no control characters); using "{default_device_name}".')
+    return default_device_name
 
 
 # -----------------------------------------------------------------------------

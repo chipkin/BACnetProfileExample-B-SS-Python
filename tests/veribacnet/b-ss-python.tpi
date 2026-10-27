@@ -1,0 +1,168 @@
+PICS 0
+BACnet Protocol Implementation Conformance Statement
+Vendor Name: "Chipkin Automation Systems"
+Product Name: "CAS BACnet Stack Example - B-SS (Python)"
+Product Model Number: "CAS BACnet Stack Example - B-SS"
+Product Description: "A minimal read-only BACnet/IP sensing device built on the CAS BACnet Stack. It presents three sensor objects (Analog Input, Binary Input, Multi-State Input) whose readings follow a sensor Simulation, answers ReadProperty for every required property of every object, reports a broken sensor through Analog Input 1's Reliability and the FAULT bit of Status_Flags, and is discoverable by Who-Is / I-Am and Who-Has / I-Have. It is a tutorial for implementers of the B-SS profile."
+
+BACnet Standardized Device Profiles Supported:
+{
+B-SS - BACnet Smart Sensor
+}
+
+BIBBs Supported:
+{
+DS-RP-B
+DM-DDB-B
+DM-DOB-B
+}
+
+BACnet Standard Application Services Supported:
+{
+ReadProperty Execute
+IAm Initiate
+IHave Initiate
+WhoHas Execute
+WhoIs Execute
+}
+
+Standard Object Types Supported:
+{
+Analog Input
+Binary Input
+Device
+Multi-state Input
+Network Port
+}
+
+Data Link Layer Option:
+{
+BACnet IP, (Annex J)
+}
+
+Character Sets Supported:
+{
+ISO 10646 (UTF-8) / ANSI X3.4
+}
+
+Special Functionality:
+{
+Maximum APDU size in octets: 1476
+Segmented Requests Supported, window size: 1
+Segmented Responses Supported, window size: 1
+}
+
+Default Property Value Restrictions:
+{
+unsigned-integer: <minimum: 0; maximum: 65535>
+signed-integer: <minimum: -2147483648; maximum: 2147483647>
+real: <minimum: -3.4e+38; maximum: 3.4e+38; resolution: 0.01>
+character-string: <maximum length string: 64>
+octet-string: <maximum length string: 256>
+list: <maximum length list: 10>
+}
+
+Fail Times:
+{
+Notification Fail Time: 60
+Internal Processing Fail Time: 2
+Minimum ON/OFF Time: 2
+Schedule Evaluation Fail Time: 2
+External Command Fail Time: 5
+Program Object State Change Fail Time: 5
+Acknowledgement Fail Time: 2
+Slave Proxy Confirm Interval: 6
+Unconfirmed Response Fail Time: 4
+Activate Changes Fail Time: 30
+Auto Negotiation Fail Time: 15
+Foreign Device Registration Fail Time: 10
+Channel Write Fail Time: 30
+}
+
+List of Objects in test device:
+{
+{
+object-identifier: (analog-input, 1)
+object-name: "Bronze"
+object-type: ANALOG_INPUT
+event-state: ?
+out-of-service: FALSE
+present-value: ?
+reliability: ?
+status-flags: ?
+units: DEGREES-CELSIUS
+},
+{
+object-identifier: (binary-input, 1)
+object-name: "Emerald"
+object-type: BINARY_INPUT
+event-state: ?
+out-of-service: FALSE
+polarity: NORMAL
+present-value: ?
+status-flags: ?
+},
+{
+object-identifier: (device, 389001)
+object-name: "Chipkin Example B-SS"
+object-type: DEVICE
+apdu-segment-timeout: 5000
+apdu-timeout: 10000
+application-software-version: "1.2.0"
+description: "Chipkin CAS BACnet Stack example - B-SS (Smart Sensor) profile. Demonstrates DS-RP-B: ReadProperty plus Who-Is/I-Am with read-only sensor objects."
+device-address-binding: ?
+firmware-revision: "6.0.23.0"
+max-apdu-length-accepted: 1476
+model-name: "CAS BACnet Stack Example - B-SS"
+number-of-apdu-retries: 3
+object-list: {(analog-input, 1), (binary-input, 1), (device, 389001), (multi-state-input, 1), (network-port, 1)}
+protocol-object-types-supported: (T,F,F,T,F,F,F,F,T,F,F,F,F,T,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,T,F,F,F,F,F,F,F,F)
+protocol-services-supported: (F,F,F,F,F,F,F,F,F,F,F,F,T,F,F,F,F,F,F,F,F,F,F,F,F,F,T,T,F,F,F,F,F,T,T,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F)
+protocol-version: 1
+segmentation-supported: SEGMENTED-BOTH
+system-status: OPERATIONAL
+vendor-identifier: 389
+vendor-name: "Chipkin Automation Systems"
+protocol-revision: 30
+database-revision: ?
+max-segments-accepted: 16
+},
+{
+object-identifier: (multi-state-input, 1)
+object-name: "Hot Pink"
+object-type: MULTI_STATE_INPUT
+event-state: ?
+number-of-states: 3
+out-of-service: FALSE
+present-value: ?
+state-text: {"On", "Off", "Auto"}
+status-flags: ?
+},
+{
+object-identifier: (network-port, 1)
+object-name: "Vermilion"
+object-type: NETWORK_PORT
+out-of-service: FALSE
+reliability: NO-FAULT-DETECTED
+status-flags: (F,F,F,F)
+apdu-length: 1476
+ip-address: "host-specific (not recorded)"
+ip-default-gateway: "host-specific (not recorded)"
+ip-dns-server: "host-specific (not recorded)"
+bacnet-ip-mode: NORMAL
+ip-subnet-mask: "host-specific (not recorded)"
+bacnet-ip-udp-port: 47824
+changes-pending: FALSE
+command: IDLE
+fd-bbmd-address: "host-specific (not recorded)"
+fd-subscription-lifetime: 0
+link-speed: 0
+mac-address: "host-specific (not recorded)"
+network-number: 0
+network-number-quality: UNKNOWN
+network-type: IPV4
+protocol-level: BACNET-APPLICATION
+command-validation-result: {{(*-*-*), *:*:*.*}, {OBJECT, SUCCESS}}
+},
+}
+End of BACnet Protocol Implementation Conformance Statement

@@ -18,16 +18,18 @@ These scripts are the C++ reference's (`BACnetProfileExample-B-SS-CPP`
 
 ```bash
 python tests/run_wire_tests.py
-python tests/run_wire_tests.py --port 47821 --exe "python3.10 main.py"
+python tests/run_wire_tests.py --port 47824 --exe "python3.10 main.py"
 ```
 
 `--exe` defaults to `main.py`; a path ending in `.py` is run with the Python
 that runs the tests. It may also be a whole command line:
 `bss_setup.launch_command()` splits it with `shlex` (a bare program name such as
-`python3` is looked up on `PATH`) - the only change from the reference's
-scripts, apart from naming `main.py` where they name `main.cpp`. It ends with
+`python3` is looked up on `PATH`) - the one change from the reference's
+scripts, apart from naming `main.py` where they name `main.cpp`, and
+`configuration_test.py`'s `--help` check, which names the options this port
+reads (it has no `--xml`). It ends with
 `ALL WIRE TESTS PASSED` (exit 0) or the scripts that failed. `--port` (default
-47821) is the UDP port the test starts the sensor on. It takes about 40 seconds.
+47824) is the UDP port the test starts the sensor on. It takes about 25 seconds.
 CI (`.github/workflows/release.yml`) runs it on Linux after the smoke test.
 
 ## The setup
@@ -72,6 +74,32 @@ folder, and the sensor wire is broken for as long as that file exists.
    **`FD_Subscription_Lifetime` (419)** are each listed and read as a value - one
    check per issue (#20, #21, #22), the three reads Explorer 4.23.2.0 found
    failing.
+5. Device **`Database_Revision`** reads 5: the stack starts it at 0 and adds one
+   for each object added at start-up (the Device and its four objects), and
+   nothing changes the object database afterwards (cl. 12.11; docs/PICS.md).
+
+## `configuration_test.py` - the Device's identity is configurable
+
+BACnet requires the Device's Object_Identifier and Object_Name to be
+configurable (135-2024 cl. 12.1.1.3, 12.1.1.4); Object_Name must be unique
+across the internetwork, so two units cannot share a compile-time name. The
+sensor is started three ways, then asked for `--help`:
+
+1. **No options (control):** Device 389001 answers Who-Is, and its
+   `Object_Name` is the default `Chipkin Example B-SS`.
+2. **`--deviceID 389901 --deviceName "Chipkin Example B-SS Unit 2"`:** the
+   device answers Who-Is as 389901; `Object_Name` reads the configured name;
+   a read of Device 389001 gets Error OBJECT / UNKNOWN_OBJECT (1/31); the
+   ready line names the configured device; a Who-Has by the configured name
+   gets an I-Have from Device 389901 with that name (DM-DOB-B).
+3. **Boundaries:** an empty name and a 256-byte name each print a warning and
+   keep the default; a 255-byte name (the limit) reads back whole.
+4. **`--help`** lists `--port`, `--deviceID` and `--deviceName`, and neither
+   `--dcc-password` (a B-SS has no DeviceCommunicationControl) nor `--xml`.
+
+Mutation (2026-10-22, Windows): `get_property_character_string` serving the
+constant `DEVICE_NAME` instead of the configured name fails 3 of 17 checks (the
+configured name, the Who-Has, the 255-byte name).
 
 ## `sensing_test.py` - the readings follow the sensor (the Profile Function)
 

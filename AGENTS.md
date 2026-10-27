@@ -42,12 +42,12 @@ can learn from and copy-paste. Favour clarity over cleverness.
   `main.cpp`'s `GetProperty*`; this repository says `main.py`'s
   `get_property_*`).
 - `submodules/cas-bacnet-stack/` - the **CAS BACnet Stack** as a git submodule
-  (private; Stack Pin `6.x` @ `64b2cfac5`, 6.0.23). After cloning, run
+  (private; Stack Pin `6.x` @ `69b6249f`, 6.0.23). After cloning, run
   `git submodule update --init --recursive`. Two things in it are used
   **in place**:
   - `adapters/python/` - the stack's Python adapter. `main.py` puts it on
     `sys.path`. `CASBACnetStackAdapterBindings.py` is **generated** by the
-    stack's `ci_scripts/generate-python-adapter.js`. **Never copy, vendor,
+    stack's `_ci_scripts/generate-python-adapter.js`. **Never copy, vendor,
     regenerate by hand or edit any adapter file into this repository** - it is
     part of the licensed stack. If it is missing something, put the smallest
     marked workaround in this repository's own code and report it as an
@@ -65,10 +65,17 @@ into its `bin/` (README.md "Build the CAS BACnet Stack library"):
 
 ```bash
 git submodule update --init --recursive
-# Windows: MSBuild submodules/cas-bacnet-stack/projects/msvs/CASBACnetStack/CASBACnetStack.vcxproj -p:Configuration=ReleaseDll -p:Platform=x64
-# Linux:   g++ -shared -fPIC -std=c++17 -O2 -I submodules/cas-bacnet-stack/source submodules/cas-bacnet-stack/source/*.cpp -o submodules/cas-bacnet-stack/bin/libCASBACnetStack_x64_Release.so
+cd submodules/cas-bacnet-stack
+# Windows: cmake --preset windows-x64-dll && cmake --build --preset windows-x64-dll-release && cmake --install build-windows-x64-dll --config Release
+# Linux:   cmake --preset linux-x64-release-shared && cmake --build --preset linux-x64-release-shared && cmake --install build-linux-x64-release-shared
+cd ../..
 python -m py_compile main.py common/*.py tests/*.py
 ```
+
+CMake is the stack's only build: it no longer has `projects/msvs/` or
+`projects/linux/` (removed before `6.x` @ `29b83de6`). `cmake --install` puts
+the library in the submodule's `bin/`, where `main.py` loads it from. Always a
+customer-interface build, never the test-tool library.
 
 **The stack binary is never committed and never released.** `.gitignore`
 covers every library name; `.github/workflows/release.yml` builds the library to
@@ -82,7 +89,7 @@ No dependencies beyond the Python standard library - do not add a
 ## Run
 
 ```bash
-python main.py [--port 47808] [--deviceID 389001]   # python3 on Linux
+python main.py [--port 47808] [--deviceID 389001] [--deviceName "Chipkin Example B-SS"]   # python3 on Linux
 python main.py --version
 ```
 

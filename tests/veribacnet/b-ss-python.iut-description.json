@@ -1,0 +1,304 @@
+{
+  "capabilities": {
+    "maxApduLength": 1476,
+    "maxSegmentsAccepted": 16,
+    "objectTypesSupported": [
+      "analogInput",
+      "binaryInput",
+      "device",
+      "multiStateInput",
+      "networkPort"
+    ],
+    "segmentation": "both",
+    "servicesExecuted": [
+      "readProperty",
+      "whoHas",
+      "whoIs"
+    ],
+    "servicesSupported": [
+      "readProperty",
+      "iAm",
+      "iHave",
+      "whoHas",
+      "whoIs"
+    ]
+  },
+  "conflicts": [],
+  "declared": {
+    "bibbs": [
+      "DS-RP-B",
+      "DM-DDB-B",
+      "DM-DOB-B"
+    ],
+    "options": {
+      "4.2::Contains Octet String property values": "Network Port 1 IP_Address, IP_Subnet_Mask, IP_Default_Gateway and MAC_Address (OCTET STRING) are readable: main.py serves the first three through get_property_octet_string, the stack serves MAC_Address, docs/PICS.md section 7 says every listed BACnet/IP property reads as a value, and the EPICS captures them."
+    },
+    "source": "operator"
+  },
+  "discovered": {
+    "capturedAt": "2026-10-22T11:15:51.921Z",
+    "readDeviceProperties": {
+      "applicationSoftwareVersion": "1.2.0",
+      "firmwareRevision": "6.0.23.0",
+      "modelName": "CAS BACnet Stack Example - B-SS",
+      "objectName": "Chipkin Example B-SS",
+      "protocolRevision": 30,
+      "protocolVersion": 1,
+      "vendorId": 389,
+      "vendorName": "Chipkin Automation Systems"
+    },
+    "whoIsResults": [
+      {
+        "deviceInstance": 389001,
+        "maxApdu": 1476,
+        "segmentation": "both",
+        "vendorId": 389
+      }
+    ]
+  },
+  "identity": {
+    "applicationSoftwareVersion": "1.2.0",
+    "deviceInstance": 389001,
+    "firmwareRevision": "6.0.23.0",
+    "modelName": "CAS BACnet Stack Example - B-SS",
+    "objectName": "Chipkin Example B-SS",
+    "protocolRevision": 30,
+    "protocolVersion": 1,
+    "vendorId": 389,
+    "vendorName": "Chipkin Automation Systems"
+  },
+  "network": {
+    "address": {
+      "ip": "127.0.0.1",
+      "port": 47824
+    },
+    "transport": "bacnetIp"
+  },
+  "objects": [
+    {
+      "objectIdentifier": {
+        "instance": 1,
+        "type": "analogInput"
+      },
+      "objectName": "Bronze",
+      "properties": {
+        "outOfService": {
+          "tag": "boolean",
+          "value": false
+        },
+        "units": {
+          "name": "degreesCelsius",
+          "tag": "enumerated",
+          "value": 62
+        }
+      }
+    },
+    {
+      "objectIdentifier": {
+        "instance": 1,
+        "type": "binaryInput"
+      },
+      "objectName": "Emerald",
+      "properties": {
+        "outOfService": {
+          "tag": "boolean",
+          "value": false
+        },
+        "polarity": {
+          "name": "normal",
+          "tag": "enumerated",
+          "value": 0
+        }
+      }
+    },
+    {
+      "objectIdentifier": {
+        "instance": 389001,
+        "type": "device"
+      },
+      "objectName": "Chipkin Example B-SS",
+      "properties": {
+        "databaseRevision": {
+          "tag": "unsignedInt",
+          "value": 5
+        },
+        "maxApduLengthAccepted": {
+          "tag": "unsignedInt",
+          "value": 1476
+        },
+        "protocolRevision": {
+          "tag": "unsignedInt",
+          "value": 30
+        },
+        "protocolVersion": {
+          "tag": "unsignedInt",
+          "value": 1
+        },
+        "vendorIdentifier": {
+          "tag": "unsignedInt",
+          "value": 389
+        }
+      }
+    },
+    {
+      "objectIdentifier": {
+        "instance": 1,
+        "type": "multiStateInput"
+      },
+      "objectName": "Hot Pink",
+      "properties": {
+        "numberOfStates": {
+          "tag": "unsignedInt",
+          "value": 3
+        },
+        "outOfService": {
+          "tag": "boolean",
+          "value": false
+        },
+        "stateText": {
+          "tag": "constructed",
+          "value": [
+            {
+              "tag": "characterString",
+              "value": "On"
+            },
+            {
+              "tag": "characterString",
+              "value": "Off"
+            },
+            {
+              "tag": "characterString",
+              "value": "Auto"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "objectIdentifier": {
+        "instance": 1,
+        "type": "networkPort"
+      },
+      "objectName": "Vermilion",
+      "properties": {
+        "apduLength": {
+          "tag": "unsignedInt",
+          "value": 1476
+        },
+        "networkType": {
+          "name": "ipv4",
+          "tag": "enumerated",
+          "value": 5
+        },
+        "outOfService": {
+          "tag": "boolean",
+          "value": false
+        },
+        "protocolLevel": {
+          "name": "bacnetApplication",
+          "tag": "enumerated",
+          "value": 2
+        }
+      }
+    }
+  ],
+  "provenance": {
+    "epicsHeader": {
+      "characterSetsSupported": "derived",
+      "dataLinkOptions": "derived",
+      "deviceProfile": "user-entered",
+      "productDescription": "user-entered",
+      "specialFunctionality": "derived"
+    },
+    "generatedAt": "2026-10-21T06:29:13.209Z",
+    "testPoints": 0
+  },
+  "testDatabase": {
+    "commandableTestPoints": [],
+    "deviceConfigurationScenario": {
+      "notes": "The Device object is the only object whose identity can change, and only by start-up configuration: restart the example with --deviceID <n> or --deviceName <text>. It executes no WriteProperty, so nothing changes over the network.",
+      "objectNameChangeMethod": "replaceConfiguration",
+      "safeAlternateObjectIdentifier": {
+        "instance": 389901,
+        "type": "device"
+      },
+      "safeAlternateObjectName": "Chipkin Example B-SS Alt"
+    },
+    "identityMutationTestPoints": [
+      {
+        "notes": "The Device object is the only object whose identity can change, and only by start-up configuration: restart the example with --deviceID <n> or --deviceName <text>. It executes no WriteProperty, so nothing changes over the network.",
+        "objectIdentifier": {
+          "instance": 389001,
+          "type": "device"
+        },
+        "safeAlternateObjectIdentifier": {
+          "instance": 389901,
+          "type": "device"
+        },
+        "safeAlternateObjectName": "Chipkin Example B-SS Alt"
+      }
+    ],
+    "multiStateInputStateTextScenario": {
+      "initialSize": 3,
+      "numberOfStatesPropertyIdentifier": "numberOfStates",
+      "objectIdentifier": {
+        "instance": 1,
+        "type": "multiStateInput"
+      },
+      "stateTextPropertyIdentifier": "stateText"
+    },
+    "networkPort": {
+      "activeOne": {
+        "objectIdentifier": {
+          "instance": 1,
+          "type": "networkPort"
+        }
+      }
+    },
+    "objectDeletion": "none",
+    "passwords": {},
+    "rebootWindow": {
+      "activateChangesMs": 30000,
+      "coldstartMs": 60000,
+      "warmstartMs": 30000
+    },
+    "remoteWhoHasExecution": {
+      "allowedResponseNpdus": [
+        {
+          "destination": {
+            "dnet": 65535
+          }
+        },
+        {
+          "destination": {
+            "dnet": 99
+          }
+        },
+        {
+          "destination": {
+            "dadr": "01",
+            "dnet": 99
+          }
+        }
+      ],
+      "notes": [
+        "TD-side choice for the remote-network Who-Has / Who-Is rows (135.1 9.32.2.x, 9.33.2.x): remote network X = 99, source address Y = 01. The allowed response paths are the clause three: global broadcast, remote broadcast to X, the TD on X."
+      ],
+      "requestNpdu": {
+        "destination": {
+          "dnet": "globalBroadcast"
+        },
+        "source": {
+          "sadr": "01",
+          "snet": 99
+        }
+      }
+    },
+    "timeouts": {
+      "apdu": 3000,
+      "reply": 1000,
+      "segment": 1000
+    },
+    "writableTestPoints": []
+  }
+}

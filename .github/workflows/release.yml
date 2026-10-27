@@ -7,9 +7,9 @@
 # interpreted, so `main.py` runs directly - `pip install` of anything beyond the standard
 # library is NOT required (see README.md "Prerequisites"). The only compiled artifact is the
 # CAS BACnet Stack shared library, built from the stack submodule's C++ source into the
-# submodule's own bin/ folder (MSBuild's ReleaseDll|x64 configuration on Windows, g++ -shared
-# on Linux - see README.md "Build the CAS BACnet Stack library"), where main.py loads it with
-# ctypes. main.py uses the stack's generated Python adapter in place from
+# submodule's own bin/ folder with the stack's CMake, its only build (the windows-x64-dll
+# preset on Windows, linux-x64-release-shared on Linux, then `cmake --install` into bin/ - see
+# README.md "Build the CAS BACnet Stack library"), where main.py loads it with ctypes. main.py uses the stack's generated Python adapter in place from
 # submodules/cas-bacnet-stack/adapters/python/.
 #
 # THE STACK BINARY IS NEVER PACKAGED. The CAS BACnet Stack (library and adapter) is a
@@ -40,9 +40,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # windows-2022 pins the VS 2022 (v143) toolset the stack's ReleaseDll config
-          # (and the released binaries) are built with.
-          - os: windows-2022
+          # windows-2025 serves the VS 2026 image (v145), which the stack's windows-x64-dll
+          # preset generates for and the stack's own release.yml builds its DLL on.
+          - os: windows-2025
             artifact: BACnetProfileExampleBSSPython-windows-x64
             nativelib: CASBACnetStack_x64_Release.dll
             metrics: metrics-windows.json
@@ -75,27 +75,30 @@ jobs:
         shell: bash
         run: python -m py_compile main.py common/*.py tests/*.py
 
-      - name: Build the CAS BACnet Stack library (Windows - MSBuild ReleaseDll|x64)
+      - name: Build the CAS BACnet Stack library (Windows - CMake preset windows-x64-dll)
         if: runner.os == 'Windows'
         shell: pwsh
+        working-directory: submodules/cas-bacnet-stack
         run: |
-          $msbuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
-            -latest -products * -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
-          & $msbuild submodules\cas-bacnet-stack\projects\msvs\CASBACnetStack\CASBACnetStack.vcxproj `
-            /p:Configuration=ReleaseDll /p:Platform=x64 /p:PlatformToolset=v143 /m
-          if ($LASTEXITCODE -ne 0) { throw "MSBuild failed with exit code $LASTEXITCODE" }
-          Get-ChildItem submodules\cas-bacnet-stack\bin\CASBACnetStack_x64_Release.dll
+          cmake --preset windows-x64-dll
+          if ($LASTEXITCODE -ne 0) { throw "windows-x64-dll configure failed" }
+          cmake --build --preset windows-x64-dll-release
+          if ($LASTEXITCODE -ne 0) { throw "windows-x64-dll build failed" }
+          cmake --install build-windows-x64-dll --config Release
+          if ($LASTEXITCODE -ne 0) { throw "windows-x64-dll install failed" }
+          Get-ChildItem bin\CASBACnetStack_x64_Release.dll
 
-      - name: Build the CAS BACnet Stack library (Linux - g++ shared)
+      - name: Build the CAS BACnet Stack library (Linux - CMake preset linux-x64-release-shared)
         if: runner.os == 'Linux'
         shell: bash
+        working-directory: submodules/cas-bacnet-stack
         run: |
-          mkdir -p submodules/cas-bacnet-stack/bin
-          g++ -shared -fPIC -std=c++17 -O2 \
-              -I submodules/cas-bacnet-stack/source \
-              submodules/cas-bacnet-stack/source/*.cpp \
-              -o submodules/cas-bacnet-stack/bin/libCASBACnetStack_x64_Release.so
-          ls -la submodules/cas-bacnet-stack/bin/libCASBACnetStack_x64_Release.so
+          set -e
+          sudo apt-get install -y ninja-build
+          cmake --preset linux-x64-release-shared
+          cmake --build --preset linux-x64-release-shared
+          cmake --install build-linux-x64-release-shared
+          ls -la bin/libCASBACnetStack_x64_Release.so
 
       - name: Smoke test + metrics (starts, binds, stays up; measures time to 'ready')
         shell: bash

@@ -3,7 +3,7 @@
 # Public-domain example code (CC0) - see ../LICENSE.
 """Run every B-SS Wire Test, one after another, and report one result.
 
-    python3 tests/run_wire_tests.py [--exe main.py] [--port 47821]
+    python3 tests/run_wire_tests.py [--exe main.py] [--port 47824]
 
 Exit code 0 = every check in every script passed.
 """
@@ -21,7 +21,7 @@ import wiretest  # noqa: E402  (the vendored harness at the repository root)
 sys.path.insert(0, str(TESTS))
 import bss_setup  # noqa: E402  (this example's launch command)
 
-SCRIPTS = ["discovery_test.py", "sensing_test.py", "failure_modes_test.py"]
+SCRIPTS = ["discovery_test.py", "configuration_test.py", "sensing_test.py", "failure_modes_test.py"]
 
 
 def main():
@@ -29,7 +29,7 @@ def main():
     arguments.add_argument("--exe", default=bss_setup.default_command(),
                            help="the example's main.py (run with this Python), or a command line that "
                                 "starts it (default: main.py)")
-    arguments.add_argument("--port", type=int, default=47821, help="the smart sensor's UDP port (default 47821)")
+    arguments.add_argument("--port", type=int, default=47824, help="the smart sensor's UDP port (default 47824)")
     args = arguments.parse_args()
 
     outcomes = []

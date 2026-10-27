@@ -3,7 +3,7 @@
 # Public-domain example code (CC0) - see ../LICENSE.
 """B-SS Wire Test: a client reading the sensor gets what it measures now (DS-RP-B).
 
-    python3 tests/sensing_test.py [--exe main.py] [--port 47821]
+    python3 tests/sensing_test.py [--exe main.py] [--port 47824]
 
 ANSI/ASHRAE 135-2024 Annex L.4.5, the B-SS Profile Function: "Ability to provide
 values for any of its BACnet objects upon request". A sensor that answers with the

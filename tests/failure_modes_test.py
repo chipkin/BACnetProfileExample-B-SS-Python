@@ -3,7 +3,7 @@
 # Public-domain example code (CC0) - see ../LICENSE.
 """B-SS Wire Test: the sensor's Failure Modes - a broken sensor, and requests it cannot serve.
 
-    python3 tests/failure_modes_test.py [--exe main.py] [--port 47821]
+    python3 tests/failure_modes_test.py [--exe main.py] [--port 47824]
 
 1. A broken sensor wire. ANSI/ASHRAE 135-2024 12.2.9: Reliability "provides an
    indication of whether the Present_Value or the operation of the physical input in
